@@ -1,0 +1,60 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-heading: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --color-primary: oklch(0.4568 0.2146 277.02);
+  --color-on-primary: oklch(1.0 0 0);
+  --color-secondary: oklch(0.5854 0.2041 277.12);
+  --color-accent: oklch(0.5413 0.2466 293.01);
+  --color-background: oklch(0.2077 0.0398 265.75);
+  --color-foreground: oklch(1.0 0 0);
+  --color-muted: oklch(0.2253 0.0568 272.31);
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-destructive: oklch(0.5771 0.2152 27.33);
+  --color-ring: oklch(0.4568 0.2146 277.02);
+}
+
+/* Base styles */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 3px;
+}
+
+/* Animation for progress pulse */
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 8px var(--color-primary), 0 0 16px var(--color-primary);
+  }
+  50% {
+    opacity: 0.7;
+    box-shadow: 0 0 4px var(--color-primary), 0 0 8px var(--color-primary);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
