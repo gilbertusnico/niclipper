@@ -39,16 +39,16 @@ app.get('/api/health', (_req, res) => {
 });
 
 /**
- * POST /api/generate
- * Accepts: { "url": "https://www.youtube.com/watch?v=..." }
- * Returns: Server-Sent Events stream with progress updates
+ * GET /api/generate?url=...
+ * Uses SSE (Server-Sent Events) via native EventSource API.
+ * Accepts URL as query parameter so we can use GET (EventSource only supports GET).
  */
-app.post('/api/generate', async (req, res) => {
-  const { url } = req.body;
+app.get('/api/generate', async (req, res) => {
+  const url = req.query.url as string | undefined;
 
   // Validate URL
   if (!url || typeof url !== 'string') {
-    res.status(400).json({ error: 'Missing or invalid "url" in request body' });
+    res.status(400).json({ error: 'Missing "url" query parameter' });
     return;
   }
 
@@ -73,6 +73,7 @@ app.post('/api/generate', async (req, res) => {
     'Connection': 'keep-alive',
     'X-Accel-Buffering': 'no',
   });
+  res.flushHeaders();
 
   // Helper to send SSE events
   const sendEvent = (stage: string, progress: number, extra?: Record<string, unknown>) => {

@@ -21,7 +21,7 @@ export default function App() {
   const [clips, setClips] = useState<ClipData[]>([]);
   const [error, setError] = useState('');
 
-  const handleGenerate = useCallback(async (url: string) => {
+  const handleGenerate = useCallback((url: string) => {
     // Reset state
     setIsProcessing(true);
     setCurrentStage('');
@@ -29,79 +29,49 @@ export default function App() {
     setClips([]);
     setError('');
 
-    try {
-      // Use direct server URL to avoid Vite proxy buffering SSE events
-      const apiUrl = window.location.hostname === 'localhost'
-        ? 'http://localhost:3001'
-        : '';
-      const response = await fetch(`${apiUrl}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim() }),
-      });
+    const encodedUrl = encodeURIComponent(url.trim());
+    const eventSource = new EventSource(`/api/generate?url=${encodedUrl}`);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server error: ${response.status}`);
-      }
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const { stage, progress: prog, clips: newClips, message } = data;
 
-      // Read SSE stream
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No response stream available');
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        // Parse SSE events from buffer
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep last incomplete line in buffer
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              const { stage, progress: prog, clips: newClips, message } = data;
-
-              if (stage === 'error') {
-                setError(message || 'An error occurred during processing');
-                setCurrentStage('error');
-                setIsProcessing(false);
-                return;
-              }
-
-              if (stage === 'done') {
-                setCurrentStage('done');
-                setProgress(100);
-                setClips(newClips || []);
-                setIsProcessing(false);
-                return;
-              }
-
-              setCurrentStage(stage);
-              setProgress(prog || 0);
-            } catch {
-              // Skip malformed JSON events
-            }
-          }
+        if (stage === 'error') {
+          setError(message || 'An error occurred during processing');
+          setCurrentStage('error');
+          setIsProcessing(false);
+          eventSource.close();
+          return;
         }
-      }
 
-      // Stream ended without a done event
-      setIsProcessing(false);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
-      setError(message);
-      setCurrentStage('error');
-      setIsProcessing(false);
-    }
+        if (stage === 'done') {
+          setCurrentStage('done');
+          setProgress(100);
+          setClips(newClips || []);
+          setIsProcessing(false);
+          eventSource.close();
+          return;
+        }
+
+        setCurrentStage(stage);
+        setProgress(prog || 0);
+      } catch {
+        // Skip malformed JSON events
+      }
+    };
+
+    eventSource.onerror = () => {
+      // EventSource auto-reconnects, but if we've already received a terminal event
+      // (done/error), the connection was closed cleanly — ignore.
+      // Otherwise, it's a real error.
+      if (currentStage !== 'done' && currentStage !== 'error') {
+        setError('Connection lost. Please try again.');
+        setCurrentStage('error');
+        setIsProcessing(false);
+        eventSource.close();
+      }
+    };
   }, []);
 
   const isDone = currentStage === 'done';

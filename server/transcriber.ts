@@ -69,9 +69,22 @@ function extractAudio(
   onProgress: (progress: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Remove existing temp file if it exists (avoids permission/overwrite issues)
+    try {
+      if (fs.existsSync(outputPath)) {
+        fs.unlinkSync(outputPath);
+      }
+    } catch {
+      // ignore
+    }
+
+    // Use AAC re-encoding instead of stream copy — YouTube audio (Opus/AAC in MP4)
+    // can't always be copied directly to an M4A container.
     ffmpeg(videoPath)
       .noVideo()
-      .audioCodec('copy')
+      .audioCodec('aac')
+      .audioBitrate(128)
+      .outputOptions(['-movflags', '+faststart'])
       .output(outputPath)
       .on('progress', (info) => {
         if (info.percent) {
