@@ -16,6 +16,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/fluent-ffmpeg": "^2.1.28",
+    "archiver": "^8.0.0",
     "concurrently": "^10.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",

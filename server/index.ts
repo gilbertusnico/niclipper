@@ -1,10 +1,12 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
 import dotenv from 'dotenv';
 import ffmpegPath from 'ffmpeg-static';
+import archiver from 'archiver';
 import { runPipeline } from './pipeline.js';
 
 // Set ffmpeg path from the installed package (so fluent-ffmpeg can find the binary)
@@ -134,6 +136,58 @@ app.get('/api/open-folder', (_req, res) => {
     }
     res.json({ success: true, message: 'Output folder opened in file manager.' });
   });
+});
+
+/**
+ * GET /api/download-code
+ * Downloads the entire project source code as a ZIP file (excluding node_modules, output, .env)
+ */
+app.get('/api/download-code', (req, res) => {
+  const projectRoot = path.resolve(__dirname, '..');
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename=niclipper-source.zip');
+
+  const archive = archiver('zip', { zlib: { level: 5 } });
+  archive.pipe(res);
+
+  // Directories/files to exclude
+  const exclude = new Set([
+    'node_modules',
+    'output',
+    '.env',
+    'dist',
+    '.git',
+  ]);
+
+  // Walk helper
+  function addToArchive(dirPath: string, archivePath: string) {
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(dirPath);
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const fullPath = path.join(dirPath, entry);
+      const relPath = archivePath ? `${archivePath}/${entry}` : entry;
+      if (exclude.has(entry)) continue;
+      try {
+        const stat = fs.statSync(fullPath);
+        if (stat.isDirectory()) {
+          addToArchive(fullPath, relPath);
+        } else if (stat.isFile()) {
+          archive.file(fullPath, { name: relPath });
+        }
+      } catch {
+        // skip unreadable files
+      }
+    }
+  }
+
+  addToArchive(projectRoot, '');
+
+  archive.finalize();
 });
 
 app.listen(PORT, () => {
