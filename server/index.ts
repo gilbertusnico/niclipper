@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
 import dotenv from 'dotenv';
 import ffmpegPath from 'ffmpeg-static';
-import archiver from 'archiver';
+import * as archiver from 'archiver';
 import { runPipeline } from './pipeline.js';
 
 // Set ffmpeg path from the installed package (so fluent-ffmpeg can find the binary)
