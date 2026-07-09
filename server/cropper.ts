@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import ffmpeg from 'fluent-ffmpeg';
 import type { ViralMoment } from './types.js';
@@ -102,26 +103,42 @@ export async function cropClips(
 }
 
 /**
- * Get video dimensions using FFprobe.
+ * Get video dimensions using ffmpeg -i output parsing.
+ * Avoids needing ffprobe which may not be installed.
  */
 function getVideoDimensions(videoPath: string): Promise<VideoDimensions> {
   return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(videoPath, (err, metadata) => {
-      if (err) {
-        reject(new Error(`Failed to probe video: ${err.message}`));
+    try {
+      // ffmpeg -i outputs video info to stderr and exits with code 1 (no output file).
+      // We use 2>&1 to merge stderr into stdout, then catch the error and parse stdout.
+      execSync(`ffmpeg -i "${videoPath}" 2>&1`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+      reject(new Error('Unexpected: ffmpeg -i should have exited with code 1'));
+    } catch (err: any) {
+      // With 2>&1, the merged output is in stdout since the shell handles the redirect
+      let output = err.stdout || '';
+      // Fallback to stderr or message if stdout is empty
+      if (!output) {
+        output = err.stderr || err.message || '';
+      }
+
+      // Parse the video stream line, e.g.:
+      // Stream #0:0(eng): Video: h264 (Main), yuv420p(tv, bt709), 1920x1080 [SAR 1:1 DAR 16:9], ...
+      const match = output.match(/Stream.*: Video:.*?(\d+)x(\d+)/);
+      if (!match) {
+        reject(new Error(`Could not determine video dimensions from ffmpeg output:\n${output.slice(-500)}`));
         return;
       }
 
-      const videoStream = metadata.streams.find((s) => s.codec_type === 'video');
-      if (!videoStream || !videoStream.width || !videoStream.height) {
-        reject(new Error('Could not determine video dimensions'));
+      const width = parseInt(match[1], 10);
+      const height = parseInt(match[2], 10);
+
+      if (!width || !height) {
+        reject(new Error(`Invalid video dimensions: ${width}x${height}`));
         return;
       }
 
-      resolve({
-        width: videoStream.width,
-        height: videoStream.height,
-      });
-    });
+      console.log(`[Cropper] Detected video dimensions: ${width}x${height}`);
+      resolve({ width, height });
+    }
   });
 }
