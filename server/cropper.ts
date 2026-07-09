@@ -121,9 +121,10 @@ function getVideoDimensions(videoPath: string): Promise<VideoDimensions> {
         output = err.stderr || err.message || '';
       }
 
-      // Parse the video stream line, e.g.:
-      // Stream #0:0(eng): Video: h264 (Main), yuv420p(tv, bt709), 1920x1080 [SAR 1:1 DAR 16:9], ...
-      const match = output.match(/Stream.*: Video:.*?(\d+)x(\d+)/);
+      // Parse the video stream line for resolution, e.g.:
+      // Stream #0:0[0x1](und): Video: h264 (avc1 / 0x31637661), yuv420p(tv, bt709), 1920x1080 [SAR 1:1 DAR 16:9], ...
+      // We use a stricter pattern: digit{3,4}xdigit{3,4} to avoid matching hex codec tags like 0x31637661
+      const match = output.match(/(\d{3,4})x(\d{3,4})/);
       if (!match) {
         reject(new Error(`Could not determine video dimensions from ffmpeg output:\n${output.slice(-500)}`));
         return;
