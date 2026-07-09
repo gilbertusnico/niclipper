@@ -96,6 +96,51 @@ function extractAudioToWav(
 }
 
 /**
+ * Read a WAV file and return the raw PCM samples as a Float32Array.
+ * WAV header is parsed, and 16-bit PCM samples are normalized to [-1, 1].
+ * This is needed because Node.js has no AudioContext, so we can't
+ * pass a file path to the Transformers.js pipeline.
+ */
+function readWavAsFloat32Array(filePath: string): Float32Array {
+  const buffer = fs.readFileSync(filePath);
+  const header = buffer.subarray(0, 44);
+
+  // Validate WAV header
+  const riff = header.toString('ascii', 0, 4);
+  const wave = header.toString('ascii', 8, 12);
+  if (riff !== 'RIFF' || wave !== 'WAVE') {
+    throw new Error('Invalid WAV file header');
+  }
+
+  const bitsPerSample = header.readUInt16LE(34);
+  const numChannels = header.readUInt16LE(22);
+  const dataSize = buffer.length - 44;
+
+  if (bitsPerSample !== 16) {
+    throw new Error(`Unsupported bits per sample: ${bitsPerSample}. Expected 16-bit PCM.`);
+  }
+
+  // Read raw PCM samples
+  const samplesPerChannel = dataSize / (bitsPerSample / 8) / numChannels;
+  const result = new Float32Array(samplesPerChannel);
+
+  let offset = 44; // start of PCM data
+  for (let i = 0; i < samplesPerChannel; i++) {
+    let sum = 0;
+    for (let ch = 0; ch < numChannels; ch++) {
+      // Read signed 16-bit little-endian sample
+      const sample = buffer.readInt16LE(offset);
+      offset += 2;
+      sum += sample;
+    }
+    // Average channels (mono mix) and normalize to [-1, 1]
+    result[i] = sum / numChannels / 32768;
+  }
+
+  return result;
+}
+
+/**
  * Transcribe a WAV file using local Whisper model (via @xenova/transformers).
  * Lazy-loads the pipeline so the model is only downloaded once.
  */
@@ -124,9 +169,15 @@ async function transcribeWithWhisper(
 
   onProgress(60);
 
-  // Transcribe the audio file with timestamps
+  // Read the WAV file as raw PCM samples (Float32Array)
+  // Node.js has no AudioContext, so we MUST pass audio data directly
+  console.log('[Transcriber] Reading WAV audio data...');
+  const audioData = readWavAsFloat32Array(audioPath);
+  console.log(`[Transcriber] Loaded ${audioData.length} samples from WAV (${(audioData.length / 16000).toFixed(1)}s)`);
+
+  // Transcribe the audio data with timestamps
   console.log('[Transcriber] Running Whisper transcription...');
-  const result = await transcriber(audioPath, {
+  const result = await transcriber(audioData, {
     return_timestamps: true,
     language: 'indonesian',
     task: 'transcribe',
