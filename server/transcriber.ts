@@ -2,7 +2,6 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import ffmpeg from 'fluent-ffmpeg';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,10 +11,9 @@ const tempDir = path.resolve(__dirname, '..', 'temp');
 export type TranscribeProgressCallback = (progress: number) => void;
 
 /**
- * Extract audio from video and transcribe using Gemini.
- * @param videoPath - Path to the downloaded video file
- * @param onProgress - Callback for transcription progress (0-100)
- * @returns The full transcript text with timestamps
+ * Transcribe audio from a video file using local Whisper (via @xenova/transformers).
+ * Completely offline — no API keys, no rate limits, no cost.
+ * The model is downloaded once on first use and cached.
  */
 export async function transcribeAudio(
   videoPath: string,
@@ -26,32 +24,25 @@ export async function transcribeAudio(
     fs.mkdirSync(tempDir, { recursive: true });
   }
 
-  const audioPath = path.join(tempDir, 'audio.m4a');
+  const wavPath = path.join(tempDir, 'audio.wav');
 
-  // Step 1: Extract audio using FFmpeg (0-30% progress)
+  // Step 1: Extract audio to 16kHz mono WAV using FFmpeg (0-20% progress)
   onProgress(5);
   console.log(`[Transcriber] Extracting audio from ${videoPath}...`);
 
-  await extractAudio(videoPath, audioPath, (ffmpegProgress) => {
-    // Map FFmpeg progress (0-100) to our 0-30 range
-    onProgress(Math.round(ffmpegProgress * 0.3));
+  await extractAudioToWav(videoPath, wavPath, (ffmpegProgress) => {
+    onProgress(Math.round(ffmpegProgress * 0.2));
   });
 
-  onProgress(30);
-  console.log(`[Transcriber] Audio extracted to ${audioPath}`);
+  onProgress(20);
+  console.log(`[Transcriber] Audio extracted to ${wavPath}`);
 
-  // Step 2: Read audio file and send to Gemini (30-100% progress)
-  onProgress(35);
-  console.log('[Transcriber] Transcribing audio with Gemini...');
+  // Step 2: Transcribe using local Whisper model (20-100% progress)
+  onProgress(25);
+  console.log('[Transcriber] Loading Whisper model...');
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY is not set in .env file');
-  }
-
-  const transcript = await transcribeWithGemini(apiKey, audioPath, (geminiProgress) => {
-    // Map Gemini progress (0-100) to our 30-100 range
-    onProgress(30 + Math.round(geminiProgress * 0.7));
+  const transcript = await transcribeWithWhisper(wavPath, (whisperProgress) => {
+    onProgress(20 + Math.round(whisperProgress * 0.8));
   });
 
   onProgress(100);
@@ -61,15 +52,15 @@ export async function transcribeAudio(
 }
 
 /**
- * Extract audio from video file using FFmpeg.
+ * Extract audio to 16kHz mono WAV (the format Whisper expects).
  */
-function extractAudio(
+function extractAudioToWav(
   videoPath: string,
   outputPath: string,
   onProgress: (progress: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    // Remove existing temp file if it exists (avoids permission/overwrite issues)
+    // Remove existing temp file if it exists
     try {
       if (fs.existsSync(outputPath)) {
         fs.unlinkSync(outputPath);
@@ -78,13 +69,11 @@ function extractAudio(
       // ignore
     }
 
-    // Use AAC re-encoding instead of stream copy — YouTube audio (Opus/AAC in MP4)
-    // can't always be copied directly to an M4A container.
     ffmpeg(videoPath)
       .noVideo()
-      .audioCodec('aac')
-      .audioBitrate(128)
-      .outputOptions(['-movflags', '+faststart'])
+      .audioCodec('pcm_s16le') // 16-bit PCM
+      .audioFrequency(16000)    // 16kHz — Whisper expects this
+      .audioChannels(1)         // mono
       .output(outputPath)
       .on('progress', (info) => {
         if (info.percent) {
@@ -107,101 +96,81 @@ function extractAudio(
 }
 
 /**
- * Send audio to Gemini API for transcription, with auto-retry on rate limits.
+ * Transcribe a WAV file using local Whisper model (via @xenova/transformers).
+ * Lazy-loads the pipeline so the model is only downloaded once.
  */
-async function transcribeWithGemini(
-  apiKey: string,
+async function transcribeWithWhisper(
   audioPath: string,
   onProgress: (progress: number) => void,
 ): Promise<string> {
-  const genAI = new GoogleGenerativeAI(apiKey);
+  // Dynamic import — @xenova/transformers is a heavy ESM-only module
+  const { pipeline, env } = await import('@xenova/transformers');
 
-  // Use Gemini 2.0 Flash for speed and cost
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-2.0-flash',
+  // Use 'tiny' model (~150MB) for speed — change to 'base' (~300MB) for better accuracy
+  const MODEL_ID = 'Xenova/whisper-tiny';
+
+  // Cache the model in the project's temp directory (not in home dir)
+  env.cacheDir = path.resolve(tempDir, 'models');
+
+  // Create the ASR pipeline (downloads model on first run)
+  const transcriber = await pipeline('automatic-speech-recognition', MODEL_ID, {
+    progress_callback: (progress: { status: string; loaded?: number; total?: number }) => {
+      if (progress.status === 'progress' && progress.loaded !== undefined && progress.total) {
+        const modelLoadProgress = Math.round((progress.loaded / progress.total) * 30);
+        onProgress(modelLoadProgress);
+      }
+    },
   });
 
-  // Read audio file as base64
-  const audioData = fs.readFileSync(audioPath);
-  const base64Audio = audioData.toString('base64');
+  onProgress(60);
 
-  onProgress(40);
+  // Transcribe the audio file with timestamps
+  console.log('[Transcriber] Running Whisper transcription...');
+  const result = await transcriber(audioPath, {
+    return_timestamps: true,
+    language: 'indonesian',
+    task: 'transcribe',
+  });
 
-  const prompt = `Transcribe this audio file in Indonesian language. 
+  onProgress(95);
 
-For each spoken segment, provide:
-1. The exact text spoken in Indonesian
-2. The start time in seconds
-3. The end time in seconds
-
-Format each segment as:
-[TIMESTAMP: startTime -> endTime]
-SPOKEN TEXT
-
-Example:
-[TIMESTAMP: 0.0 -> 3.5]
-Halo semuanya, selamat datang di video saya hari ini.
-
-[TIMESTAMP: 3.5 -> 8.2]
-Kita akan membahas topik yang sangat menarik.
-
-Please transcribe EVERYTHING that is spoken, no matter how short. Do not skip any content. Be as accurate as possible with timestamps.`;
-
-  // Retry config
-  const MAX_RETRIES = 5;
-  const BASE_DELAY_MS = 2000; // 2 detik awal
-
-  let lastError: Error | null = null;
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const result = await model.generateContent([
-        {
-          inlineData: {
-            mimeType: 'audio/mp4',
-            data: base64Audio,
-          },
-        },
-        prompt,
-      ]);
-
-      onProgress(80);
-
-      const response = await result.response;
-      const text = response.text();
-
-      onProgress(100);
-
-      if (!text || text.trim().length === 0) {
-        throw new Error('Gemini returned empty transcription. The audio may be silent or unclear.');
-      }
-
-      return text;
-    } catch (err: any) {
-      lastError = err;
-
-      // Cek apakah ini 429 rate limit error
-      const isRateLimit =
-        err.message?.includes('429') ||
-        err.message?.includes('Too Many Requests') ||
-        err.message?.includes('quota') ||
-        err.message?.includes('RESOURCE_EXHAUSTED');
-
-      if (!isRateLimit || attempt >= MAX_RETRIES) {
-        // Bukan rate limit — throw langsung
-        // Atau udah habis percobaan — throw terakhir
-        throw err;
-      }
-
-      // Exponential backoff + jitter
-      const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 1000;
-      console.log(`[Transcriber] Rate limited! Retrying in ${Math.round(delay / 1000)}s (attempt ${attempt}/${MAX_RETRIES})...`);
-      onProgress(30 + attempt * 3); // Progress sedikit naik biar keliatan hidup
-
-      await new Promise((resolve) => setTimeout(resolve, delay));
+  // Format the result into the same timestamped format Gemini would return
+  const chunks = (result as any).chunks || [];
+  if (chunks.length === 0) {
+    // If no chunks, return the full text with a single timestamp from 0
+    if (result.text?.trim()) {
+      const duration = getAudioDuration(audioPath);
+      return `[TIMESTAMP: 0.0 -> ${duration.toFixed(1)}]\n${result.text.trim()}\n`;
     }
+    throw new Error('Whisper returned empty transcription. The audio may be silent or unclear.');
   }
 
-  // Shouldn't reach here, but just in case
-  throw lastError || new Error('Transcription failed after retries');
+  const segments = chunks.map((chunk: any) => {
+    const start = chunk.timestamp?.[0] ?? 0;
+    const end = chunk.timestamp?.[1] ?? start;
+    const text = (chunk.text || '').trim();
+    return `[TIMESTAMP: ${start.toFixed(1)} -> ${end.toFixed(1)}]\n${text}`;
+  });
+
+  return segments.join('\n\n');
+}
+
+/**
+ * Get the duration of a WAV file in seconds by reading the file header.
+ */
+function getAudioDuration(filePath: string): number {
+  try {
+    const header = fs.readFileSync(filePath, { length: 100 });
+    // WAV format: chunk size at bytes 4-7, subchunk2 size at bytes 40-43
+    // Sample rate at bytes 24-27, byte rate at bytes 28-31
+    const sampleRate = header.readUInt32LE(24);
+    const byteRate = header.readUInt32LE(28);
+    const dataSize = fs.statSync(filePath).size - 44; // minus WAV header
+    if (byteRate > 0) {
+      return dataSize / byteRate;
+    }
+  } catch {
+    // fallback
+  }
+  return 0;
 }

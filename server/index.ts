@@ -58,14 +58,6 @@ app.get('/api/generate', async (req, res) => {
     return;
   }
 
-  // Check for GEMINI_API_KEY
-  if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'your_gemini_api_key_here') {
-    res.status(400).json({
-      error: 'GEMINI_API_KEY is not configured. Please set it in your .env file. Get a key at https://aistudio.google.com/app/apikey',
-    });
-    return;
-  }
-
   // Set up SSE headers
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
