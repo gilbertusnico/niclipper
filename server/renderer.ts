@@ -137,8 +137,8 @@ function burnSubtitles(
 function getVideoDuration(videoPath: string): Promise<number> {
   return new Promise((resolve, reject) => {
     try {
-      // ffmpeg outputs duration info to stderr, redirect to stdout
-      const output = execSync(`ffmpeg -i "${videoPath}" 2>&1`, { encoding: 'utf8' });
+      // ffmpeg -i exits with code 1 (no output file specified), so use || true to avoid error
+      const output = execSync(`ffmpeg -i "${videoPath}" 2>&1 || true`, { encoding: 'utf8' });
       // Match "Duration: HH:MM:SS.MS"
       const match = output.match(/Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})/);
       if (match) {
@@ -152,19 +152,7 @@ function getVideoDuration(videoPath: string): Promise<number> {
         reject(new Error(`Could not parse duration from ffmpeg output for ${videoPath}`));
       }
     } catch (err: any) {
-      // Even on error, ffmpeg -i outputs the metadata to stderr before the error
-      const output = err.stdout || err.stderr || err.message || '';
-      const match = output.match(/Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})/);
-      if (match) {
-        const hours = parseInt(match[1], 10);
-        const minutes = parseInt(match[2], 10);
-        const seconds = parseInt(match[3], 10);
-        const centiseconds = parseInt(match[4], 10);
-        const total = hours * 3600 + minutes * 60 + seconds + centiseconds / 100;
-        resolve(total);
-      } else {
-        reject(new Error(`Failed to probe video duration: ${err.message}`));
-      }
+      reject(new Error(`Failed to probe video duration: ${err.message}`));
     }
   });
 }
