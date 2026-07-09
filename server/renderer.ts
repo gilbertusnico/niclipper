@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import ffmpeg from 'fluent-ffmpeg';
 import type { ViralMoment, ClipResult } from './types.js';
@@ -131,17 +132,40 @@ function burnSubtitles(
 }
 
 /**
- * Get the duration of a video file in seconds.
+ * Get the duration of a video file in seconds using ffmpeg -i.
  */
 function getVideoDuration(videoPath: string): Promise<number> {
   return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(videoPath, (err, metadata) => {
-      if (err) {
-        reject(new Error(`Failed to probe video duration: ${err.message}`));
-        return;
+    try {
+      // ffmpeg outputs duration info to stderr, redirect to stdout
+      const output = execSync(`ffmpeg -i "${videoPath}" 2>&1`, { encoding: 'utf8' });
+      // Match "Duration: HH:MM:SS.MS"
+      const match = output.match(/Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})/);
+      if (match) {
+        const hours = parseInt(match[1], 10);
+        const minutes = parseInt(match[2], 10);
+        const seconds = parseInt(match[3], 10);
+        const centiseconds = parseInt(match[4], 10);
+        const total = hours * 3600 + minutes * 60 + seconds + centiseconds / 100;
+        resolve(total);
+      } else {
+        reject(new Error(`Could not parse duration from ffmpeg output for ${videoPath}`));
       }
-      resolve(metadata.format.duration || 0);
-    });
+    } catch (err: any) {
+      // Even on error, ffmpeg -i outputs the metadata to stderr before the error
+      const output = err.stdout || err.stderr || err.message || '';
+      const match = output.match(/Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})/);
+      if (match) {
+        const hours = parseInt(match[1], 10);
+        const minutes = parseInt(match[2], 10);
+        const seconds = parseInt(match[3], 10);
+        const centiseconds = parseInt(match[4], 10);
+        const total = hours * 3600 + minutes * 60 + seconds + centiseconds / 100;
+        resolve(total);
+      } else {
+        reject(new Error(`Failed to probe video duration: ${err.message}`));
+      }
+    }
   });
 }
 
