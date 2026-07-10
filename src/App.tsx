@@ -102,7 +102,7 @@ export default function App() {
             </h1>
           </div>
           <p className="text-sm text-foreground/50">
-            Paste a YouTube URL and get 3 AI-curated short clips with Indonesian subtitles
+            Paste a YouTube URL and get 3 AI-curated short clips
           </p>
         </div>
       </header>
@@ -167,7 +167,7 @@ export default function App() {
                   Ready to clip
                 </h2>
                 <p className="text-sm text-foreground/40 mt-1 max-w-md mx-auto">
-                  Paste a YouTube URL above and click "Generate Clips" to create 3 AI-curated short clips with Indonesian subtitles — perfect for TikTok, Reels, and Shorts.
+                  Paste a YouTube URL above and click "Generate Clips" to create 3 AI-curated short clips — perfect for TikTok, Reels, and Shorts.
                 </p>
               </div>
             </section>
