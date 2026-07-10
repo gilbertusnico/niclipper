@@ -1,4 +1,4 @@
-import { Download, FolderOpen, Clock, Timer, Brain, Target, Sparkles, BarChart3, FileText } from 'lucide-react';
+import { Download, FolderOpen, Clock, Timer, Brain, Target, Sparkles, BarChart3 } from 'lucide-react';
 
 interface ClipData {
   id: number;
@@ -107,18 +107,7 @@ export default function ClipCard({ clip }: ClipCardProps) {
           </div>
         )}
 
-        {clip.contentType && (
-          <div className="flex items-center gap-2 text-xs">
-            <FileText className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
-            <span className="text-foreground/50">Type:</span>
-            <span className="font-medium text-foreground/70 capitalize">{clip.contentType}</span>
-            {clip.confidence !== undefined && (
-              <span className="text-foreground/40">
-                ({(clip.confidence * 100).toFixed(0)}% confidence)
-              </span>
-            )}
-          </div>
-        )}
+        
 
         {clip.narrativeStages && clip.narrativeStages.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
