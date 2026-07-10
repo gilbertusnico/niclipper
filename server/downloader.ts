@@ -48,6 +48,8 @@ export async function downloadVideo(
   console.log(`[Downloader] Starting yt-dlp for video ${videoId}...`);
 
   return new Promise((resolve, reject) => {
+    let stderrBuffer = '';
+
     const args = [
       url,
       '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
@@ -68,6 +70,7 @@ export async function downloadVideo(
 
     proc.stderr?.on('data', (chunk: Buffer) => {
       const output = chunk.toString();
+      stderrBuffer += output;
 
       // yt-dlp outputs progress on stderr: "[download]  45.2% of ..."
       const progressMatch = output.match(/(\d+\.?\d*)%/);
@@ -83,12 +86,18 @@ export async function downloadVideo(
         onProgress?.(100);
         resolve(finalPath);
       } else {
-        reject(new Error(`yt-dlp exited with code ${code}`));
+        // Baca stderr untuk pesan error yang jelas
+        const errorDetail = stderrBuffer.split('\n').filter(l => l.trim()).slice(-5).join(' | ');
+        const errorMsg = errorDetail
+          ? `yt-dlp exited with code ${code}: ${errorDetail}`
+          : `yt-dlp exited with code ${code}`;
+        console.error(`[Downloader] ${errorMsg}`);
+        reject(new Error(errorMsg));
       }
     });
 
     proc.on('error', (err) => {
-      reject(new Error(`Failed to start yt-dlp: ${err.message}. Pastikan yt-dlp sudah terinstall.`));
+      reject(new Error(`Failed to start yt-dlp: ${err.message}. Pastikan yt-dlp sudah terinstall.\nInstall: sudo apt install yt-dlp\nAtau: brew install yt-dlp\nAtau: pip install yt-dlp`));
     });
   });
 }
