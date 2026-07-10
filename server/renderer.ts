@@ -2,7 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
-import ffmpeg from 'fluent-ffmpeg';
+import { runFfmpeg, getFfmpegPath } from './ffmpeg.js';
 import type { ViralMoment, ClipResult } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -88,7 +88,7 @@ export async function renderFinalClips(
 }
 
 /**
- * Burn SRT subtitles into a video using FFmpeg.
+ * Burn SRT subtitles into a video using raw FFmpeg (no fluent-ffmpeg/ffprobe dependency).
  */
 function burnSubtitles(
   videoPath: string,
@@ -96,49 +96,35 @@ function burnSubtitles(
   outputPath: string,
   onProgress: (progress: number) => void,
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // Escape the subtitle path for FFmpeg filter
-    const escapedSubPath = subtitlePath.replace(/\\/g, '/').replace(/:/g, '\\:');
+  // Escape the subtitle path for FFmpeg filter
+  const escapedSubPath = subtitlePath.replace(/\\/g, '/').replace(/:/g, '\\:');
 
-    ffmpeg(videoPath)
-      .videoCodec('libx264')
-      .audioCodec('aac')
-      .outputOptions([
-        '-vf', `subtitles=${escapedSubPath}`,
-        '-preset', 'fast',
-        '-crf', '22',
-        '-pix_fmt', 'yuv420p',
-        '-movflags', '+faststart',
-      ])
-      .output(outputPath)
-      .on('progress', (info) => {
-        if (info.percent) {
-          onProgress(Math.min(info.percent, 99));
-        }
-      })
-      .on('end', () => {
-        onProgress(100);
-        resolve();
-      })
-      .on('error', (err) => {
-        if (err.message.includes('Cannot find ffmpeg') || err.message.includes('not found')) {
-          reject(new Error('FFmpeg is not installed. Please install it: https://ffmpeg.org/download.html'));
-        } else {
-          reject(new Error(`Failed to burn subtitles: ${err.message}`));
-        }
-      })
-      .run();
-  });
+  const args = [
+    '-i', videoPath,
+    '-c:v', 'libx264',
+    '-c:a', 'aac',
+    '-vf', `subtitles=${escapedSubPath}`,
+    '-preset', 'fast',
+    '-crf', '22',
+    '-pix_fmt', 'yuv420p',
+    '-movflags', '+faststart',
+    '-y',
+    outputPath,
+  ];
+
+  return runFfmpeg(args, { onProgress, timeout: 30 * 60 * 1000 });
 }
 
 /**
  * Get the duration of a video file in seconds using ffmpeg -i.
+ * Returns 0 if duration cannot be determined.
  */
 function getVideoDuration(videoPath: string): Promise<number> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     try {
       // ffmpeg -i exits with code 1 (no output file specified), so use || true to avoid error
-      const output = execSync(`ffmpeg -i "${videoPath}" 2>&1 || true`, { encoding: 'utf8' });
+      const ffmpegBin = getFfmpegPath();
+      const output = execSync(`"${ffmpegBin}" -i "${videoPath}" 2>&1 || true`, { encoding: 'utf8' });
       // Match "Duration: HH:MM:SS.MS"
       const match = output.match(/Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})/);
       if (match) {
@@ -149,10 +135,12 @@ function getVideoDuration(videoPath: string): Promise<number> {
         const total = hours * 3600 + minutes * 60 + seconds + centiseconds / 100;
         resolve(total);
       } else {
-        reject(new Error(`Could not parse duration from ffmpeg output for ${videoPath}`));
+        console.log(`[Renderer] Warning: Could not parse duration for ${videoPath}, assuming 0s`);
+        resolve(0);
       }
     } catch (err: any) {
-      reject(new Error(`Failed to probe video duration: ${err.message}`));
+      console.log(`[Renderer] Warning: Failed to probe duration for ${videoPath}: ${err.message}`);
+      resolve(0);
     }
   });
 }

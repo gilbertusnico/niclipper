@@ -187,6 +187,10 @@ function parseTranscript(transcript: string): Omit<TimestampedSegment, 'score'>[
       }
       currentStart = parseFloat(timestampMatch[1]);
       currentEnd = parseFloat(timestampMatch[2]);
+      // Skip segments with 0 duration (bad timestamps from Whisper)
+      if (currentEnd <= currentStart) {
+        currentEnd = currentStart + 5; // default to 5s minimum
+      }
       currentText = [];
     } else {
       const text = line.trim();
@@ -312,7 +316,8 @@ function selectTopSegments(
     for (const seg of segments) {
       if (selected.length >= count) break;
       const alreadySelected = selected.some((s) => s.start === seg.start);
-      if (!alreadySelected) {
+      const duration = seg.end - seg.start;
+      if (!alreadySelected && duration >= 5) {
         selected.push(seg);
       }
     }

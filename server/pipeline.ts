@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { downloadVideo } from './downloader.js';
 import { transcribeAudio } from './transcriber.js';
 import { analyzeTranscript } from './analyzer.js';
@@ -5,6 +8,9 @@ import { cropClips } from './cropper.js';
 import { generateSubtitles } from './subtitle.js';
 import { renderFinalClips } from './renderer.js';
 import type { ClipResult, ViralMoment, ProgressCallback } from './types.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export type { ClipResult, ViralMoment, ProgressCallback };
 
@@ -145,21 +151,21 @@ export async function runPipeline(
  * Clean up temporary files
  */
 function cleanup(): void {
-  import('fs').then((fs) => {
-    const tempDir = new URL('../temp', import.meta.url).pathname;
-    const subsDir = new URL('../subtitles', import.meta.url).pathname;
+  const dirs = [
+    path.resolve(__dirname, '..', 'temp'),
+    path.resolve(__dirname, '..', 'subtitles'),
+  ];
 
-    for (const dir of [tempDir, subsDir]) {
-      fs.readdir(dir, (err, files) => {
-        if (err) return;
+  for (const dir of dirs) {
+    try {
+      if (fs.existsSync(dir)) {
+        const files = fs.readdirSync(dir);
         for (const file of files) {
-          fs.unlink(pathJoin(dir, file), () => {});
+          fs.unlinkSync(path.join(dir, file));
         }
-      });
+      }
+    } catch {
+      // Non-blocking cleanup
     }
-  }).catch(() => {});
-}
-
-function pathJoin(...parts: string[]): string {
-  return parts.join('/').replace(/\/+/g, '/');
+  }
 }

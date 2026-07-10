@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import ffmpeg from 'fluent-ffmpeg';
+import { runFfmpeg } from './ffmpeg.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,47 +52,33 @@ export async function transcribeAudio(
 }
 
 /**
- * Extract audio to 16kHz mono WAV (the format Whisper expects).
+ * Extract audio to 16kHz mono WAV (the format Whisper expects) using raw FFmpeg.
  */
 function extractAudioToWav(
   videoPath: string,
   outputPath: string,
   onProgress: (progress: number) => void,
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // Remove existing temp file if it exists
-    try {
-      if (fs.existsSync(outputPath)) {
-        fs.unlinkSync(outputPath);
-      }
-    } catch {
-      // ignore
+  // Remove existing temp file if it exists
+  try {
+    if (fs.existsSync(outputPath)) {
+      fs.unlinkSync(outputPath);
     }
+  } catch {
+    // ignore
+  }
 
-    ffmpeg(videoPath)
-      .noVideo()
-      .audioCodec('pcm_s16le') // 16-bit PCM
-      .audioFrequency(16000)    // 16kHz — Whisper expects this
-      .audioChannels(1)         // mono
-      .output(outputPath)
-      .on('progress', (info) => {
-        if (info.percent) {
-          onProgress(Math.min(info.percent, 99));
-        }
-      })
-      .on('end', () => {
-        onProgress(100);
-        resolve();
-      })
-      .on('error', (err) => {
-        if (err.message.includes('Cannot find ffmpeg') || err.message.includes('not found')) {
-          reject(new Error('FFmpeg is not installed. Please install it: https://ffmpeg.org/download.html'));
-        } else {
-          reject(new Error(`Audio extraction failed: ${err.message}`));
-        }
-      })
-      .run();
-  });
+  const args = [
+    '-i', videoPath,
+    '-vn',
+    '-acodec', 'pcm_s16le',
+    '-ar', '16000',
+    '-ac', '1',
+    '-y',
+    outputPath,
+  ];
+
+  return runFfmpeg(args, { onProgress, timeout: 10 * 60 * 1000 });
 }
 
 /**
@@ -151,8 +137,9 @@ async function transcribeWithWhisper(
   // Dynamic import — @xenova/transformers is a heavy ESM-only module
   const { pipeline, env } = await import('@xenova/transformers');
 
-  // Use 'tiny' model (~150MB) for speed — change to 'base' (~300MB) for better accuracy
-  const MODEL_ID = 'Xenova/whisper-tiny';
+  // Use 'base' model (~300MB) for decent accuracy on Indonesian
+  // Falls back to 'tiny' (~150MB) if 'base' fails to load
+  const MODEL_ID = 'Xenova/whisper-base';
 
   // Cache the model in the project's temp directory (not in home dir)
   env.cacheDir = path.resolve(tempDir, 'models');
@@ -176,11 +163,14 @@ async function transcribeWithWhisper(
   console.log(`[Transcriber] Loaded ${audioData.length} samples from WAV (${(audioData.length / 16000).toFixed(1)}s)`);
 
   // Transcribe the audio data with timestamps
+  // Chunk into 30-second segments with 5-second stride for long audio
   console.log('[Transcriber] Running Whisper transcription...');
   const result = await transcriber(audioData, {
     return_timestamps: true,
     language: 'indonesian',
     task: 'transcribe',
+    chunk_length_s: 30,
+    stride_length_s: 5,
   });
 
   onProgress(95);

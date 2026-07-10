@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Scissors, AlertCircle } from 'lucide-react';
 import UrlInput from './components/UrlInput';
 import ProgressBar from './components/ProgressBar';
@@ -29,6 +29,9 @@ export default function App() {
     setClips([]);
     setError('');
 
+    // Use a ref to track terminal state — avoids stale closure bugs
+    const terminalRef = { current: false };
+
     const encodedUrl = encodeURIComponent(url.trim());
     const eventSource = new EventSource(`/api/generate?url=${encodedUrl}`);
 
@@ -38,6 +41,7 @@ export default function App() {
         const { stage, progress: prog, clips: newClips, message } = data;
 
         if (stage === 'error') {
+          terminalRef.current = true;
           setError(message || 'An error occurred during processing');
           setCurrentStage('error');
           setIsProcessing(false);
@@ -46,6 +50,7 @@ export default function App() {
         }
 
         if (stage === 'done') {
+          terminalRef.current = true;
           setCurrentStage('done');
           setProgress(100);
           setClips(newClips || []);
@@ -62,15 +67,13 @@ export default function App() {
     };
 
     eventSource.onerror = () => {
-      // EventSource auto-reconnects, but if we've already received a terminal event
-      // (done/error), the connection was closed cleanly — ignore.
-      // Otherwise, it's a real error.
-      if (currentStage !== 'done' && currentStage !== 'error') {
-        setError('Connection lost. Please try again.');
-        setCurrentStage('error');
-        setIsProcessing(false);
-        eventSource.close();
-      }
+      // If we already got a done/error event, this reconnect attempt is harmless — ignore.
+      if (terminalRef.current) return;
+
+      setError('Connection lost. Please try again.');
+      setCurrentStage('error');
+      setIsProcessing(false);
+      eventSource.close();
     };
   }, []);
 
