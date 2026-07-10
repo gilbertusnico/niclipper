@@ -141,6 +141,9 @@ async function transcribeWithWhisper(
   // that affects 'base' and larger models in transformers.js
   const MODEL_ID = 'Xenova/whisper-tiny';
 
+  // Suppress ONNX Runtime warnings (unused initializer messages, etc.)
+  env.logLevel = 'fatal';
+
   // Cache the model in the project's temp directory (not in home dir)
   env.cacheDir = path.resolve(tempDir, 'models');
 
