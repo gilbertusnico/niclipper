@@ -137,9 +137,9 @@ async function transcribeWithWhisper(
   // Dynamic import — @xenova/transformers is a heavy ESM-only module
   const { pipeline, env } = await import('@xenova/transformers');
 
-  // Use 'base' model (~300MB) for decent accuracy on Indonesian
-  // Falls back to 'tiny' (~150MB) if 'base' fails to load
-  const MODEL_ID = 'Xenova/whisper-base';
+  // Use 'tiny' model (~150MB) — faster and avoids ONNX reshape bug
+  // that affects 'base' and larger models in transformers.js
+  const MODEL_ID = 'Xenova/whisper-tiny';
 
   // Cache the model in the project's temp directory (not in home dir)
   env.cacheDir = path.resolve(tempDir, 'models');
