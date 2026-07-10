@@ -57,13 +57,14 @@ export async function runPipeline(
     throw new Error(`Transcription failed: ${msg}`);
   }
 
-  // ── Stage 3: Analyze ───────────────────────────────────────────────
+  // ── Stage 3: Analyze with Content Understanding Engine ──────────────
   emitProgress('analyzing', 0);
   console.log('[Pipeline] Stage 3: Analyzing transcript for viral moments...');
 
   let moments: ViralMoment[];
   try {
-    moments = await analyzeTranscript(transcript, (progress) => {
+    const audioPath = videoPath.replace(/\.\w+$/, '.wav');
+    moments = await analyzeTranscript(transcript, videoPath, audioPath, (progress) => {
       emitProgress('analyzing', progress);
     });
     console.log(`[Pipeline] Found ${moments.length} viral moments`);

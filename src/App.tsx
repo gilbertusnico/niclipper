@@ -10,9 +10,20 @@ interface ClipData {
   duration: number;
   startTime: number;
   endTime: number;
+  reason?: string;
+  finalScore?: number;
+  retentionScore?: {
+    hook3s: number;
+    maintain10s: number;
+    payoffFull: number;
+    overall: number;
+  };
+  narrativeStages?: string[];
+  contentType?: string;
+  confidence?: number;
 }
 
-type AppStage = '' | 'downloading' | 'transcribing' | 'analyzing' | 'cropping' | 'subtitles' | 'rendering' | 'done' | 'error';
+type AppStage = '' | 'downloading' | 'transcribing' | 'analyzing' | 'cropping' | 'rendering' | 'done' | 'error';
 
 export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);

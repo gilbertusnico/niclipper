@@ -15,7 +15,6 @@ const STAGES: StageInfo[] = [
   { key: 'transcribing', label: 'Transcribing' },
   { key: 'analyzing', label: 'Analyzing' },
   { key: 'cropping', label: 'Cropping' },
-  { key: 'subtitles', label: 'Subtitles' },
   { key: 'rendering', label: 'Rendering' },
   { key: 'done', label: 'Done' },
 ];
@@ -34,7 +33,7 @@ export default function ProgressBar({ currentStage, progress }: ProgressBarProps
       </div>
 
       {/* Stage labels */}
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-6 gap-1">
         {STAGES.map((stage, index) => {
           const isCompleted = index < currentIndex || (currentStage === 'error' && index < currentIndex);
           const isCurrent = index === currentIndex && currentStage !== 'error' && currentStage !== 'done';

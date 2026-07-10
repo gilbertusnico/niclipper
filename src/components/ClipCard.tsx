@@ -1,4 +1,4 @@
-import { Download, FolderOpen, Clock, Timer } from 'lucide-react';
+import { Download, FolderOpen, Clock, Timer, Brain, Target, Sparkles, BarChart3, FileText } from 'lucide-react';
 
 interface ClipData {
   id: number;
@@ -6,6 +6,17 @@ interface ClipData {
   duration: number;
   startTime: number;
   endTime: number;
+  reason?: string;
+  finalScore?: number;
+  retentionScore?: {
+    hook3s: number;
+    maintain10s: number;
+    payoffFull: number;
+    overall: number;
+  };
+  narrativeStages?: string[];
+  contentType?: string;
+  confidence?: number;
 }
 
 interface ClipCardProps {
@@ -69,6 +80,82 @@ export default function ClipCard({ clip }: ClipCardProps) {
             {formatTime(clip.startTime)} — {formatTime(clip.endTime)}
           </span>
         </div>
+
+        {/* Rich analysis metadata */}
+        {clip.reason && (
+          <div className="flex items-start gap-2 text-xs">
+            <Brain className="w-3.5 h-3.5 mt-0.5 text-accent shrink-0" aria-hidden="true" />
+            <p className="text-foreground/60 leading-relaxed">{clip.reason}</p>
+          </div>
+        )}
+
+        {clip.finalScore !== undefined && (
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <BarChart3 className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+              <span className="text-xs text-foreground/50">Score</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="h-1.5 w-20 rounded-full bg-muted/80 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-accent transition-all duration-500"
+                  style={{ width: `${Math.min(clip.finalScore * 10, 100)}%` }}
+                />
+              </div>
+              <span className="text-xs font-medium text-foreground/70">{clip.finalScore.toFixed(1)}</span>
+            </div>
+          </div>
+        )}
+
+        {clip.contentType && (
+          <div className="flex items-center gap-2 text-xs">
+            <FileText className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+            <span className="text-foreground/50">Type:</span>
+            <span className="font-medium text-foreground/70 capitalize">{clip.contentType}</span>
+            {clip.confidence !== undefined && (
+              <span className="text-foreground/40">
+                ({(clip.confidence * 100).toFixed(0)}% confidence)
+              </span>
+            )}
+          </div>
+        )}
+
+        {clip.narrativeStages && clip.narrativeStages.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Sparkles className="w-3 h-3 text-accent" aria-hidden="true" />
+            {clip.narrativeStages.map((stage, i) => (
+              <span
+                key={i}
+                className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-accent/10 text-accent/80"
+              >
+                {stage}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {clip.retentionScore && (
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <Target className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+              <span className="text-xs font-medium text-foreground/60">Retention</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: 'Hook (3s)', value: clip.retentionScore.hook3s },
+                { label: 'Maintain (10s)', value: clip.retentionScore.maintain10s },
+                { label: 'Payoff', value: clip.retentionScore.payoffFull },
+              ].map(({ label, value }) => (
+                <div key={label} className="text-center">
+                  <span className="block text-xs font-semibold text-foreground/70">
+                    {(value * 100).toFixed(0)}%
+                  </span>
+                  <span className="block text-[10px] text-foreground/40 truncate">{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="flex gap-2 pt-1">
           <a

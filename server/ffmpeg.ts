@@ -30,7 +30,7 @@ export function runFfmpeg(
     onProgress?: (percent: number) => void;
     timeout?: number;
   },
-): Promise<void> {
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const ffmpegBin = getFfmpegPath();
     const proc = spawn(ffmpegBin, args, {
@@ -73,7 +73,7 @@ export function runFfmpeg(
 
       if (code === 0) {
         options?.onProgress?.(100);
-        resolve();
+        resolve(stderr);
       } else {
         // ffmpeg -i with no output file exits with code 1 — that's expected
         // Only treat it as an error if we actually had arguments beyond -i
@@ -81,7 +81,7 @@ export function runFfmpeg(
         if (code === 1 && !hasOutput) {
           // This is just a probe (-i without output), not a real error
           options?.onProgress?.(100);
-          resolve();
+          resolve(stderr);
         } else {
           reject(new Error(stderr.slice(-500).trim()));
         }

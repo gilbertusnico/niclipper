@@ -6,6 +6,21 @@ export interface ViralMoment {
   startTime: number;
   endTime: number;
   reason: string;
+  /** Retention prediction breakdown (0-100 each) */
+  retentionScore?: {
+    hook3s: number;
+    maintain10s: number;
+    payoffFull: number;
+    overall: number;
+  };
+  /** Weighted final ranking score */
+  finalScore?: number;
+  /** Unique narrative stages in this clip */
+  narrativeStages?: string[];
+  /** Detected content type */
+  contentType?: string;
+  /** Content classification confidence (0-1) */
+  confidence?: number;
 }
 
 export interface ClipResult {
@@ -14,6 +29,23 @@ export interface ClipResult {
   duration: number;
   startTime: number;
   endTime: number;
+  /** Retention prediction breakdown (0-100 each) */
+  retentionScore?: {
+    hook3s: number;
+    maintain10s: number;
+    payoffFull: number;
+    overall: number;
+  };
+  /** Weighted final ranking score */
+  finalScore?: number;
+  /** Unique narrative stages in this clip (e.g. "setup → conflict → resolution") */
+  narrativeStages?: string[];
+  /** Detected content type (e.g. "storytelling", "tutorial", "comedy") */
+  contentType?: string;
+  /** Content classification confidence (0-1) */
+  confidence?: number;
+  /** Human-readable reason for clip selection */
+  reason?: string;
 }
 
 export type ProgressCallback = (

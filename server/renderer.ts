@@ -56,13 +56,23 @@ export async function renderFinalClips(
     // Get duration of the output file
     const duration = await getVideoDuration(outputPath);
 
-    clips.push({
+    const clip: ClipResult = {
       id: clipIndex,
       filename: `clip_${clipIndex}.mp4`,
       duration: Math.round(duration),
       startTime: Math.round(moment.startTime),
       endTime: Math.round(moment.endTime),
-    });
+    };
+
+    // Forward all available analysis metadata
+    if (moment.reason) clip.reason = moment.reason;
+    if (moment.finalScore !== undefined) clip.finalScore = Math.round(moment.finalScore * 100) / 100;
+    if (moment.retentionScore) clip.retentionScore = moment.retentionScore;
+    if (moment.narrativeStages) clip.narrativeStages = moment.narrativeStages;
+    if (moment.contentType) clip.contentType = moment.contentType;
+    if (moment.confidence !== undefined) clip.confidence = moment.confidence;
+
+    clips.push(clip);
 
     console.log(`[Renderer] Clip ${clipIndex} ready: ${outputPath} (${Math.round(duration)}s)`);
   }
