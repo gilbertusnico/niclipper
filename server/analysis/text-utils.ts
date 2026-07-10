@@ -294,7 +294,7 @@ export function hasStrongEnding(sentences: string[]): boolean {
   const strongEndings = [
     'jadi', 'kesimpulannya', 'akhirnya', 'intinya',
     'ternyata', 'gitu', 'begitu', 'that\'s', 'so',
-    'that is', 'itulah', 'it's', 'makanya',
+    'that is', 'itulah', "it's", 'makanya',
   ];
 
   // Check if last sentence starts with a conclusion signal
