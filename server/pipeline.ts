@@ -5,7 +5,6 @@ import { downloadVideo } from './downloader.js';
 import { transcribeAudio } from './transcriber.js';
 import { analyzeTranscript } from './analyzer.js';
 import { cropClips } from './cropper.js';
-import { generateSubtitles } from './subtitle.js';
 import { renderFinalClips } from './renderer.js';
 import type { ClipResult, ViralMoment, ProgressCallback } from './types.js';
 
@@ -20,8 +19,7 @@ export type { ClipResult, ViralMoment, ProgressCallback };
  * 2. Extract audio and transcribe
  * 3. Analyze transcript for viral moments
  * 4. Crop each moment to 9:16 vertical
- * 5. Generate Indonesian subtitles
- * 6. Burn subtitles and render final clips
+ * 5. Render final clips
  */
 export async function runPipeline(
   url: string,
@@ -106,28 +104,9 @@ export async function runPipeline(
     throw new Error(`Cropping failed: ${msg}`);
   }
 
-  // ── Stage 5: Generate Subtitles ────────────────────────────────────
-  emitProgress('subtitles', 0);
-  console.log('[Pipeline] Stage 5: Generating subtitles...');
-
-  try {
-    for (let i = 0; i < moments.length; i++) {
-      const moment = moments[i];
-      const subProgress = Math.round(((i + 1) / moments.length) * 100);
-      emitProgress('subtitles', subProgress, { clip: i + 1 });
-
-      await generateSubtitles(transcript, moment, i + 1);
-      console.log(`[Pipeline] Subtitles generated for clip ${i + 1}`);
-    }
-    emitProgress('subtitles', 100);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Subtitle generation failed';
-    throw new Error(`Subtitle generation failed: ${msg}`);
-  }
-
-  // ── Stage 6: Render ────────────────────────────────────────────────
+  // ── Stage 5: Render ────────────────────────────────────────────────
   emitProgress('rendering', 0);
-  console.log('[Pipeline] Stage 6: Rendering final clips...');
+  console.log('[Pipeline] Stage 5: Rendering final clips...');
 
   let clips: ClipResult[];
   try {
@@ -153,7 +132,6 @@ export async function runPipeline(
 function cleanup(): void {
   const dirs = [
     path.resolve(__dirname, '..', 'temp'),
-    path.resolve(__dirname, '..', 'subtitles'),
   ];
 
   for (const dir of dirs) {

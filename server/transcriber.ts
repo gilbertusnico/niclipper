@@ -143,12 +143,37 @@ async function transcribeWithWhisper(
 
   // Suppress ONNX Runtime warnings (unused initializer messages, etc.)
   env.logLevel = 'fatal';
+  // Also set env variable for extra safety
+  process.env.ORT_LOG_LEVEL = 'FATAL';
 
   // Cache the model in the project's temp directory (not in home dir)
-  env.cacheDir = path.resolve(tempDir, 'models');
+  const modelCacheDir = path.resolve(tempDir, 'models');
+  env.cacheDir = modelCacheDir;
+
+  // 🧹 Clear any stale model cache from previous runs (e.g. whisper-base)
+  // Corrupted ONNX files from a different model version cause the Reshape error
+  try {
+    if (fs.existsSync(modelCacheDir)) {
+      const entries = fs.readdirSync(modelCacheDir);
+      // Only clear if the cached model doesn't match our target
+      const hasTinyModel = entries.some(e => e.includes('whisper-tiny'));
+      if (!hasTinyModel) {
+        console.log('[Transcriber] Purging stale model cache (wrong model version)...');
+        fs.rmSync(modelCacheDir, { recursive: true, force: true });
+      }
+    }
+  } catch {
+    // Non-critical
+  }
+
+  // Force fresh download from HuggingFace (don't silently use stale local files)
+  env.allowLocalModels = false;
+  env.useFS = false;
 
   // Create the ASR pipeline (downloads model on first run)
+  // quantized: false avoids ONNX quantization reshape issues on some CPU archs
   const transcriber = await pipeline('automatic-speech-recognition', MODEL_ID, {
+    quantized: false,
     progress_callback: (progress: { status: string; loaded?: number; total?: number }) => {
       if (progress.status === 'progress' && progress.loaded !== undefined && progress.total) {
         const modelLoadProgress = Math.round((progress.loaded / progress.total) * 30);
@@ -168,13 +193,21 @@ async function transcribeWithWhisper(
   // Transcribe the audio data with timestamps
   // Chunk into 30-second segments with 5-second stride for long audio
   console.log('[Transcriber] Running Whisper transcription...');
-  const result = await transcriber(audioData, {
-    return_timestamps: true,
-    language: 'indonesian',
-    task: 'transcribe',
-    chunk_length_s: 30,
-    stride_length_s: 5,
-  });
+  let result: any;
+  try {
+    result = await transcriber(audioData, {
+      return_timestamps: true,
+      language: 'indonesian',
+      task: 'transcribe',
+      chunk_length_s: 30,
+      stride_length_s: 5,
+    });
+  } catch (err: unknown) {
+    const onnxError = err instanceof Error ? err.message : String(err);
+    console.error('[Transcriber] ONNX/Runtime error:', onnxError);
+    console.error('[Transcriber] Stack:', err instanceof Error ? err.stack : 'N/A');
+    throw new Error(`Transcription failed (ONNX Reshape error): ${onnxError}`);
+  }
 
   onProgress(95);
 

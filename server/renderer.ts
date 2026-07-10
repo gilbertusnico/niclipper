@@ -2,20 +2,19 @@ import path from 'path';
 import fs from 'fs';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
-import { runFfmpeg, getFfmpegPath } from './ffmpeg.js';
+import { getFfmpegPath } from './ffmpeg.js';
 import type { ViralMoment, ClipResult } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const outputDir = path.resolve(__dirname, '..', 'output');
-const subtitlesDir = path.resolve(__dirname, '..', 'subtitles');
 const tempDir = path.resolve(__dirname, '..', 'temp');
 
 export type RenderProgressCallback = (progress: number) => void;
 
 /**
- * Burn subtitles into each cropped clip and export final MP4s.
+ * Copy each cropped clip to the final output directory.
  * @param croppedFiles - Array of paths to cropped temp clips
  * @param moments - The viral moments with timestamps
  * @param onProgress - Callback for rendering progress (0-100)
@@ -45,25 +44,14 @@ export async function renderFinalClips(
     const moment = moments[i] || { startTime: 0, endTime: 0, reason: '' };
     const clipIndex = i + 1;
     const outputPath = path.join(outputDir, `clip_${clipIndex}.mp4`);
-    const subtitlePath = path.join(subtitlesDir, `clip_${clipIndex}.srt`);
 
     const startPercent = Math.round((i / totalClips) * 100);
     onProgress(startPercent);
 
-    console.log(`[Renderer] Burning subtitles for clip ${clipIndex}...`);
+    console.log(`[Renderer] Finalising clip ${clipIndex}...`);
 
-    // Check if subtitle file exists
-    const hasSubtitles = fs.existsSync(subtitlePath) && fs.statSync(subtitlePath).size > 50;
-
-    if (hasSubtitles) {
-      await burnSubtitles(croppedFile, subtitlePath, outputPath, (clipProgress) => {
-        const overall = Math.round(((i + clipProgress / 100) / totalClips) * 100);
-        onProgress(overall);
-      });
-    } else {
-      // No subtitles — just copy the file
-      fs.copyFileSync(croppedFile, outputPath);
-    }
+    // Just copy the already-cropped file to the output directory
+    fs.copyFileSync(croppedFile, outputPath);
 
     // Get duration of the output file
     const duration = await getVideoDuration(outputPath);
@@ -76,43 +64,15 @@ export async function renderFinalClips(
       endTime: Math.round(moment.endTime),
     });
 
-    console.log(`[Renderer] Clip ${clipIndex} rendered: ${outputPath} (${Math.round(duration)}s)`);
+    console.log(`[Renderer] Clip ${clipIndex} ready: ${outputPath} (${Math.round(duration)}s)`);
   }
 
   onProgress(100);
 
-  // Cleanup temp and subtitle files
-  cleanupDirectories();
+  // Cleanup temp files
+  cleanupTempFiles();
 
   return clips;
-}
-
-/**
- * Burn SRT subtitles into a video using raw FFmpeg (no fluent-ffmpeg/ffprobe dependency).
- */
-function burnSubtitles(
-  videoPath: string,
-  subtitlePath: string,
-  outputPath: string,
-  onProgress: (progress: number) => void,
-): Promise<void> {
-  // Escape the subtitle path for FFmpeg filter
-  const escapedSubPath = subtitlePath.replace(/\\/g, '/').replace(/:/g, '\\:');
-
-  const args = [
-    '-i', videoPath,
-    '-c:v', 'libx264',
-    '-c:a', 'aac',
-    '-vf', `subtitles=${escapedSubPath}`,
-    '-preset', 'fast',
-    '-crf', '22',
-    '-pix_fmt', 'yuv420p',
-    '-movflags', '+faststart',
-    '-y',
-    outputPath,
-  ];
-
-  return runFfmpeg(args, { onProgress, timeout: 30 * 60 * 1000 });
 }
 
 /**
@@ -122,10 +82,8 @@ function burnSubtitles(
 function getVideoDuration(videoPath: string): Promise<number> {
   return new Promise((resolve) => {
     try {
-      // ffmpeg -i exits with code 1 (no output file specified), so use || true to avoid error
       const ffmpegBin = getFfmpegPath();
       const output = execSync(`"${ffmpegBin}" -i "${videoPath}" 2>&1 || true`, { encoding: 'utf8' });
-      // Match "Duration: HH:MM:SS.MS"
       const match = output.match(/Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})/);
       if (match) {
         const hours = parseInt(match[1], 10);
@@ -146,18 +104,16 @@ function getVideoDuration(videoPath: string): Promise<number> {
 }
 
 /**
- * Clean up temp and subtitles directories.
+ * Clean up temp directory.
  */
-function cleanupDirectories(): void {
-  for (const dir of [tempDir, subtitlesDir]) {
-    if (fs.existsSync(dir)) {
-      const files = fs.readdirSync(dir);
-      for (const file of files) {
-        try {
-          fs.unlinkSync(path.join(dir, file));
-        } catch {
-          // Ignore cleanup errors
-        }
+function cleanupTempFiles(): void {
+  if (fs.existsSync(tempDir)) {
+    const files = fs.readdirSync(tempDir);
+    for (const file of files) {
+      try {
+        fs.unlinkSync(path.join(tempDir, file));
+      } catch {
+        // Ignore cleanup errors
       }
     }
   }
