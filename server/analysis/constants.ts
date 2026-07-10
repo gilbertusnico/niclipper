@@ -11,9 +11,9 @@ export const MAX_BLOCK_DURATION = 60;        // seconds — split if longer
 
 // ─── Candidate Generation ────────────────────────────────────────────────
 export const MIN_CLIP_DURATION = 30;         // seconds
-export const MAX_CLIP_DURATION = 120;        // seconds
+export const MAX_CLIP_DURATION = 60;         // seconds
 export const IDEAL_CLIP_DURATION_MIN = 30;
-export const IDEAL_CLIP_DURATION_MAX = 90;
+export const IDEAL_CLIP_DURATION_MAX = 60;
 export const MAX_CANDIDATES = 20;            // max candidates before filtering
 
 // ─── Retention Prediction ────────────────────────────────────────────────
