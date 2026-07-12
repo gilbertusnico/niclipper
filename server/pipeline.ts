@@ -63,7 +63,8 @@ export async function runPipeline(
 
   let moments: ViralMoment[];
   try {
-    const audioPath = videoPath.replace(/\.\w+$/, '.wav');
+    const tempDir = path.resolve(__dirname, '..', 'temp');
+    const audioPath = path.join(tempDir, 'audio.wav');
     moments = await analyzeTranscript(transcript, videoPath, audioPath, (progress) => {
       emitProgress('analyzing', progress);
     });
