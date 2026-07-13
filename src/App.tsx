@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
-import { Scissors, AlertCircle } from 'lucide-react';
+import { Scissors, AlertCircle, Wand2, Clock } from 'lucide-react';
 import UrlInput from './components/UrlInput';
+import TimeRangeInput from './components/TimeRangeInput';
 import ProgressBar from './components/ProgressBar';
 import ClipCard from './components/ClipCard';
 
@@ -25,24 +26,28 @@ interface ClipData {
 
 type AppStage = '' | 'downloading' | 'transcribing' | 'analyzing' | 'cropping' | 'rendering' | 'done' | 'error';
 
+type CropMode = 'ai' | 'manual';
+
 export default function App() {
+  const [mode, setMode] = useState<CropMode>('ai');
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStage, setCurrentStage] = useState<AppStage>('');
   const [progress, setProgress] = useState(0);
   const [clips, setClips] = useState<ClipData[]>([]);
   const [error, setError] = useState('');
 
-  const handleGenerate = useCallback((url: string) => {
-    // Reset state
+  const resetState = useCallback(() => {
     setIsProcessing(true);
     setCurrentStage('');
     setProgress(0);
     setClips([]);
     setError('');
+  }, []);
 
-    // Use a ref to track terminal state — avoids stale closure bugs
+  const handleGenerate = useCallback((url: string) => {
+    resetState();
+
     const terminalRef = { current: false };
-
     const encodedUrl = encodeURIComponent(url.trim());
     const eventSource = new EventSource(`/api/generate?url=${encodedUrl}`);
 
@@ -78,15 +83,61 @@ export default function App() {
     };
 
     eventSource.onerror = () => {
-      // If we already got a done/error event, this reconnect attempt is harmless — ignore.
       if (terminalRef.current) return;
-
       setError('Connection lost. Please try again.');
       setCurrentStage('error');
       setIsProcessing(false);
       eventSource.close();
     };
-  }, []);
+  }, [resetState]);
+
+  const handleManualCrop = useCallback((url: string, ranges: { start: number; end: number }[]) => {
+    resetState();
+
+    const terminalRef = { current: false };
+    const encodedUrl = encodeURIComponent(url.trim());
+    const encodedRanges = encodeURIComponent(JSON.stringify(ranges));
+    const eventSource = new EventSource(`/api/crop-manual?url=${encodedUrl}&ranges=${encodedRanges}`);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const { stage, progress: prog, clips: newClips, message } = data;
+
+        if (stage === 'error') {
+          terminalRef.current = true;
+          setError(message || 'An error occurred during processing');
+          setCurrentStage('error');
+          setIsProcessing(false);
+          eventSource.close();
+          return;
+        }
+
+        if (stage === 'done') {
+          terminalRef.current = true;
+          setCurrentStage('done');
+          setProgress(100);
+          setClips(newClips || []);
+          setIsProcessing(false);
+          eventSource.close();
+          return;
+        }
+
+        setCurrentStage(stage);
+        setProgress(prog || 0);
+      } catch {
+        // Skip malformed JSON events
+      }
+    };
+
+    eventSource.onerror = () => {
+      if (terminalRef.current) return;
+      setError('Connection lost. Please try again.');
+      setCurrentStage('error');
+      setIsProcessing(false);
+      eventSource.close();
+    };
+  }, [resetState]);
 
   const isDone = currentStage === 'done';
 
@@ -101,8 +152,54 @@ export default function App() {
               Niclipper
             </h1>
           </div>
-          <p className="text-sm text-foreground/50">
-            Paste a YouTube URL and get 3 AI-curated short clips
+
+          {/* Mode Tabs */}
+          <div className="mt-4 mx-auto max-w-xs">
+            <div className="flex bg-muted border border-border rounded-xl p-1" role="tablist" aria-label="Crop mode">
+              <button
+                role="tab"
+                aria-selected={mode === 'ai'}
+                onClick={() => { if (!isProcessing) setMode('ai'); }}
+                disabled={isProcessing}
+                className={`
+                  flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium
+                  transition-all duration-200 cursor-pointer
+                  ${mode === 'ai'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-foreground/40 hover:text-foreground/70'
+                  }
+                  ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}
+                `}
+              >
+                <Wand2 className="w-4 h-4" aria-hidden="true" />
+                <span>AI Generate</span>
+              </button>
+              <button
+                role="tab"
+                aria-selected={mode === 'manual'}
+                onClick={() => { if (!isProcessing) setMode('manual'); }}
+                disabled={isProcessing}
+                className={`
+                  flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium
+                  transition-all duration-200 cursor-pointer
+                  ${mode === 'manual'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-foreground/40 hover:text-foreground/70'
+                  }
+                  ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}
+                `}
+              >
+                <Clock className="w-4 h-4" aria-hidden="true" />
+                <span>Manual Crop</span>
+              </button>
+            </div>
+          </div>
+
+          <p className="text-sm text-foreground/50 mt-3">
+            {mode === 'ai'
+              ? 'Paste a YouTube URL and get 3 AI-curated short clips'
+              : 'Paste a YouTube URL and choose your own time ranges to crop'
+            }
           </p>
         </div>
       </header>
@@ -110,9 +207,13 @@ export default function App() {
       {/* Main content */}
       <main className="flex-1 px-4 pb-12">
         <div className="max-w-4xl mx-auto space-y-8">
-          {/* URL Input */}
+          {/* URL Input / Time Range Input */}
           <section className="pt-4">
-            <UrlInput onSubmit={handleGenerate} isProcessing={isProcessing} />
+            {mode === 'ai' ? (
+              <UrlInput onSubmit={handleGenerate} isProcessing={isProcessing} />
+            ) : (
+              <TimeRangeInput onSubmit={handleManualCrop} isProcessing={isProcessing} />
+            )}
           </section>
 
           {/* Progress Section */}
@@ -167,7 +268,10 @@ export default function App() {
                   Ready to clip
                 </h2>
                 <p className="text-sm text-foreground/40 mt-1 max-w-md mx-auto">
-                  Paste a YouTube URL above and click "Generate Clips" to create 3 AI-curated short clips — perfect for TikTok, Reels, and Shorts.
+                  {mode === 'ai'
+                    ? 'Paste a YouTube URL above and click "Generate Clips" to create 3 AI-curated short clips — perfect for TikTok, Reels, and Shorts.'
+                    : 'Paste a YouTube URL above, set your desired start and end times, and crop exactly the moments you want.'
+                  }
                 </p>
               </div>
             </section>

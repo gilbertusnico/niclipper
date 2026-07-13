@@ -7,6 +7,8 @@ import { exec } from 'child_process';
 import dotenv from 'dotenv';
 import * as archiver from 'archiver';
 import { runPipeline } from './pipeline.js';
+import { runManualPipeline } from './manual-pipeline.js';
+import type { TimeRange } from './manual-pipeline.js';
 
 // Load environment variables
 dotenv.config();
@@ -93,6 +95,99 @@ app.get('/api/generate', async (req, res) => {
   }
 
   // End the stream
+  if (!aborted) {
+    res.end();
+  }
+});
+
+/**
+ * GET /api/crop-manual?url=...&ranges=[[start,end],...]
+ * SSE endpoint for manual time-range cropping (no AI analysis).
+ * ranges is a JSON-encoded array of [startSeconds, endSeconds] pairs.
+ */
+app.get('/api/crop-manual', async (req, res) => {
+  const url = req.query.url as string | undefined;
+  const rangesRaw = req.query.ranges as string | undefined;
+
+  // Validate URL
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Missing "url" query parameter' });
+    return;
+  }
+
+  const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/i;
+  if (!youtubeRegex.test(url.trim())) {
+    res.status(400).json({ error: 'Invalid YouTube URL. Please provide a valid YouTube video URL.' });
+    return;
+  }
+
+  // Parse ranges
+  let ranges: TimeRange[];
+  try {
+    const parsed = JSON.parse(rangesRaw || '[]');
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      res.status(400).json({ error: 'Missing or invalid "ranges" parameter. Provide a JSON array of [start, end] pairs.' });
+      return;
+    }
+    ranges = parsed.map((pair: number[], i: number) => {
+      if (!Array.isArray(pair) || pair.length < 2) {
+        throw new Error(`Range ${i} is invalid`);
+      }
+      const start = Number(pair[0]);
+      const end = Number(pair[1]);
+      if (isNaN(start) || isNaN(end) || start < 0 || end <= start) {
+        throw new Error(`Range ${i} has invalid values: start=${start}, end=${end}`);
+      }
+      return { start, end };
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Invalid ranges format';
+    res.status(400).json({ error: `Invalid ranges: ${msg}` });
+    return;
+  }
+
+  if (ranges.length > 5) {
+    res.status(400).json({ error: 'Maximum 5 time ranges allowed.' });
+    return;
+  }
+
+  // Set up SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders();
+
+  const sendEvent = (stage: string, progress: number, extra?: Record<string, unknown>) => {
+    const data = JSON.stringify({ stage, progress, ...extra });
+    res.write(`data: ${data}\n\n`);
+  };
+
+  let aborted = false;
+  req.on('close', () => {
+    aborted = true;
+  });
+
+  try {
+    const clips = await runManualPipeline(url.trim(), ranges, (stage, progress, extra) => {
+      if (!aborted) {
+        sendEvent(stage, progress, extra);
+      }
+    });
+
+    if (!aborted) {
+      sendEvent('done', 100, { clips });
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+    console.error('ManualPipeline error:', message);
+    if (!aborted) {
+      sendEvent('error', 0, { message });
+    }
+  }
+
   if (!aborted) {
     res.end();
   }
