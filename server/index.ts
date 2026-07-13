@@ -129,12 +129,26 @@ app.get('/api/crop-manual', async (req, res) => {
       res.status(400).json({ error: 'Missing or invalid "ranges" parameter. Provide a JSON array of [start, end] pairs.' });
       return;
     }
-    ranges = parsed.map((pair: number[], i: number) => {
-      if (!Array.isArray(pair) || pair.length < 2) {
+    ranges = parsed.map((pair: unknown, i: number) => {
+      let start: number;
+      let end: number;
+
+      if (Array.isArray(pair)) {
+        // Array format: [start, end]
+        if (pair.length < 2) {
+          throw new Error(`Range ${i} is invalid`);
+        }
+        start = Number(pair[0]);
+        end = Number(pair[1]);
+      } else if (pair && typeof pair === 'object') {
+        // Object format: { start, end }
+        const obj = pair as Record<string, unknown>;
+        start = Number(obj.start);
+        end = Number(obj.end);
+      } else {
         throw new Error(`Range ${i} is invalid`);
       }
-      const start = Number(pair[0]);
-      const end = Number(pair[1]);
+
       if (isNaN(start) || isNaN(end) || start < 0 || end <= start) {
         throw new Error(`Range ${i} has invalid values: start=${start}, end=${end}`);
       }
