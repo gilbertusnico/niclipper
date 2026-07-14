@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef } from 'react';
-import { Scissors, AlertCircle, Wand2, Clock } from 'lucide-react';
+import { Scissors, AlertCircle, Wand2, Clock, FolderOpen } from 'lucide-react';
 import UrlInput from './components/UrlInput';
 import TimeRangeInput from './components/TimeRangeInput';
+import FileUpload from './components/FileUpload';
 import ProgressBar from './components/ProgressBar';
 import ClipCard from './components/ClipCard';
 
@@ -26,7 +27,7 @@ interface ClipData {
 
 type AppStage = '' | 'downloading' | 'transcribing' | 'analyzing' | 'cropping' | 'rendering' | 'done' | 'error';
 
-type CropMode = 'ai' | 'manual';
+type CropMode = 'ai' | 'manual' | 'file';
 
 export default function App() {
   const [mode, setMode] = useState<CropMode>('ai');
@@ -35,6 +36,10 @@ export default function App() {
   const [progress, setProgress] = useState(0);
   const [clips, setClips] = useState<ClipData[]>([]);
   const [error, setError] = useState('');
+
+  // File upload state
+  const [uploadedFileId, setUploadedFileId] = useState<string | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string>('');
 
   const resetState = useCallback(() => {
     setIsProcessing(true);
@@ -139,7 +144,85 @@ export default function App() {
     };
   }, [resetState]);
 
+  const handleLocalCrop = useCallback((_url: string, ranges: { start: number; end: number }[]) => {
+    if (!uploadedFileId) {
+      setError('No file uploaded. Please upload a video file first.');
+      return;
+    }
+
+    resetState();
+
+    const terminalRef = { current: false };
+    const encodedFileId = encodeURIComponent(uploadedFileId);
+    const encodedRanges = encodeURIComponent(JSON.stringify(ranges));
+    const eventSource = new EventSource(`/api/crop-local?fileId=${encodedFileId}&ranges=${encodedRanges}`);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const { stage, progress: prog, clips: newClips, message } = data;
+
+        if (stage === 'error') {
+          terminalRef.current = true;
+          setError(message || 'An error occurred during processing');
+          setCurrentStage('error');
+          setIsProcessing(false);
+          eventSource.close();
+          return;
+        }
+
+        if (stage === 'done') {
+          terminalRef.current = true;
+          setCurrentStage('done');
+          setProgress(100);
+          setClips(newClips || []);
+          setIsProcessing(false);
+          eventSource.close();
+          return;
+        }
+
+        setCurrentStage(stage);
+        setProgress(prog || 0);
+      } catch {
+        // Skip malformed JSON events
+      }
+    };
+
+    eventSource.onerror = () => {
+      if (terminalRef.current) return;
+      setError('Connection lost. Please try again.');
+      setCurrentStage('error');
+      setIsProcessing(false);
+      eventSource.close();
+    };
+  }, [resetState, uploadedFileId]);
+
+  const handleUploadComplete = useCallback((fileId: string, fileName: string) => {
+    setUploadedFileId(fileId);
+    setUploadedFileName(fileName);
+    setError('');
+  }, []);
+
+  const handleUploadError = useCallback((message: string) => {
+    setError(message);
+  }, []);
+
+  const handleModeChange = useCallback((newMode: CropMode) => {
+    if (isProcessing) return;
+    setMode(newMode);
+    setError('');
+    // Reset file state when switching modes
+    if (newMode !== 'file') {
+      setUploadedFileId(null);
+      setUploadedFileName('');
+    }
+  }, [isProcessing]);
+
   const isDone = currentStage === 'done';
+
+  const stageLabel = mode === 'ai' ? 'Paste a YouTube URL and get 3 AI-curated short clips'
+    : mode === 'manual' ? 'Paste a YouTube URL and choose your own time ranges to crop'
+    : 'Upload a local video file and crop specific time ranges';
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -154,15 +237,15 @@ export default function App() {
           </div>
 
           {/* Mode Tabs */}
-          <div className="mt-4 mx-auto max-w-xs">
+          <div className="mt-4 mx-auto max-w-md">
             <div className="flex bg-muted border border-border rounded-xl p-1" role="tablist" aria-label="Crop mode">
               <button
                 role="tab"
                 aria-selected={mode === 'ai'}
-                onClick={() => { if (!isProcessing) setMode('ai'); }}
+                onClick={() => handleModeChange('ai')}
                 disabled={isProcessing}
                 className={`
-                  flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium
+                  flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium
                   transition-all duration-200 cursor-pointer
                   ${mode === 'ai'
                     ? 'bg-background text-foreground shadow-sm'
@@ -172,15 +255,16 @@ export default function App() {
                 `}
               >
                 <Wand2 className="w-4 h-4" aria-hidden="true" />
-                <span>AI Generate</span>
+                <span className="hidden sm:inline">AI Generate</span>
+                <span className="sm:hidden">AI</span>
               </button>
               <button
                 role="tab"
                 aria-selected={mode === 'manual'}
-                onClick={() => { if (!isProcessing) setMode('manual'); }}
+                onClick={() => handleModeChange('manual')}
                 disabled={isProcessing}
                 className={`
-                  flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium
+                  flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium
                   transition-all duration-200 cursor-pointer
                   ${mode === 'manual'
                     ? 'bg-background text-foreground shadow-sm'
@@ -190,16 +274,33 @@ export default function App() {
                 `}
               >
                 <Clock className="w-4 h-4" aria-hidden="true" />
-                <span>Manual Crop</span>
+                <span className="hidden sm:inline">Manual Crop</span>
+                <span className="sm:hidden">Manual</span>
+              </button>
+              <button
+                role="tab"
+                aria-selected={mode === 'file'}
+                onClick={() => handleModeChange('file')}
+                disabled={isProcessing}
+                className={`
+                  flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium
+                  transition-all duration-200 cursor-pointer
+                  ${mode === 'file'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-foreground/40 hover:text-foreground/70'
+                  }
+                  ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}
+                `}
+              >
+                <FolderOpen className="w-4 h-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Import File</span>
+                <span className="sm:hidden">File</span>
               </button>
             </div>
           </div>
 
           <p className="text-sm text-foreground/50 mt-3">
-            {mode === 'ai'
-              ? 'Paste a YouTube URL and get 3 AI-curated short clips'
-              : 'Paste a YouTube URL and choose your own time ranges to crop'
-            }
+            {stageLabel}
           </p>
         </div>
       </header>
@@ -207,12 +308,29 @@ export default function App() {
       {/* Main content */}
       <main className="flex-1 px-4 pb-12">
         <div className="max-w-4xl mx-auto space-y-8">
-          {/* URL Input / Time Range Input */}
+          {/* Content based on mode */}
           <section className="pt-4">
             {mode === 'ai' ? (
               <UrlInput onSubmit={handleGenerate} isProcessing={isProcessing} />
-            ) : (
+            ) : mode === 'manual' ? (
               <TimeRangeInput onSubmit={handleManualCrop} isProcessing={isProcessing} />
+            ) : (
+              /* File mode: show upload first, then time ranges */
+              <>
+                {!uploadedFileId ? (
+                  <FileUpload
+                    onUploadComplete={handleUploadComplete}
+                    onError={handleUploadError}
+                  />
+                ) : (
+                  <TimeRangeInput
+                    onSubmit={handleLocalCrop}
+                    isProcessing={isProcessing}
+                    hideUrlInput={true}
+                    fileLabel={uploadedFileName}
+                  />
+                )}
+              </>
             )}
           </section>
 
@@ -270,7 +388,9 @@ export default function App() {
                 <p className="text-sm text-foreground/40 mt-1 max-w-md mx-auto">
                   {mode === 'ai'
                     ? 'Paste a YouTube URL above and click "Generate Clips" to create 3 AI-curated short clips — perfect for TikTok, Reels, and Shorts.'
-                    : 'Paste a YouTube URL above, set your desired start and end times, and crop exactly the moments you want.'
+                    : mode === 'manual'
+                    ? 'Paste a YouTube URL above, set your desired start and end times, and crop exactly the moments you want.'
+                    : 'Upload a video file from your computer, set the time ranges, and crop clips instantly.'
                   }
                 </p>
               </div>

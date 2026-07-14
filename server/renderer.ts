@@ -1,9 +1,12 @@
 import path from 'path';
 import fs from 'fs';
-import { execSync } from 'child_process';
+import { execSync, exec as execCb } from 'child_process';
+import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import { getFfmpegPath } from './ffmpeg.js';
 import type { ViralMoment, ClipResult } from './types.js';
+
+const execAsync = promisify(execCb);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,6 +55,9 @@ export async function renderFinalClips(
 
     // Just copy the already-cropped file to the output directory
     fs.copyFileSync(croppedFile, outputPath);
+
+    // Generate thumbnail (1 frame at 2s, 9:16 aspect)
+    await generateThumbnail(outputPath, clipIndex);
 
     // Get duration of the output file
     const duration = await getVideoDuration(outputPath);
@@ -128,4 +134,30 @@ function cleanupTempFiles(): void {
     }
   }
   console.log('[Renderer] Cleaned up temp files');
+}
+
+/**
+ * Generate a 9:16 thumbnail for a clip.
+ * Extracts 1 frame at 2 seconds into the video.
+ */
+async function generateThumbnail(videoPath: string, clipIndex: number): Promise<void> {
+  const ffmpegBin = getFfmpegPath();
+  const thumbnailPath = path.join(outputDir, `clip_${clipIndex}.jpg`);
+
+  try {
+    // Extract a frame at 2s timestamp, force 9:16 aspect ratio output
+    const cmd = `"${ffmpegBin}" -y -i "${videoPath}" -ss 00:00:02 -vframes 1 -vf "scale=432:768:force_original_aspect_ratio=increase,crop=432:768" -q:v 3 "${thumbnailPath}" 2>&1 || true`;
+    await execAsync(cmd);
+
+    // If file was created and has content, we're good
+    if (fs.existsSync(thumbnailPath) && fs.statSync(thumbnailPath).size > 0) {
+      console.log(`[Renderer] Thumbnail generated: ${thumbnailPath}`);
+    } else {
+      // Fallback: try without aspect ratio forcing, just extract any frame
+      const fallbackCmd = `"${ffmpegBin}" -y -i "${videoPath}" -ss 00:00:01 -vframes 1 -q:v 3 "${thumbnailPath}" 2>&1 || true`;
+      await execAsync(fallbackCmd);
+    }
+  } catch (err) {
+    console.log(`[Renderer] Thumbnail generation skipped for clip ${clipIndex}: ${err instanceof Error ? err.message : 'unknown error'}`);
+  }
 }

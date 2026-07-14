@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, Clock, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Clock, Plus, Trash2, FileVideo } from 'lucide-react';
 
 interface TimeRange {
   id: number;
@@ -13,6 +13,8 @@ interface TimeRange {
 interface TimeRangeInputProps {
   onSubmit: (url: string, ranges: { start: number; end: number }[]) => void;
   isProcessing: boolean;
+  hideUrlInput?: boolean;
+  fileLabel?: string;
 }
 
 const YOUTUBE_REGEX = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/i;
@@ -40,7 +42,7 @@ const DEFAULT_RANGES: TimeRange[] = [
   createEmptyRange(3, 'Clip 3'),
 ];
 
-export default function TimeRangeInput({ onSubmit, isProcessing }: TimeRangeInputProps) {
+export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, fileLabel }: TimeRangeInputProps) {
   const [url, setUrl] = useState('');
   const [urlError, setUrlError] = useState('');
   const [ranges, setRanges] = useState<TimeRange[]>(DEFAULT_RANGES);
@@ -68,15 +70,17 @@ export default function TimeRangeInput({ onSubmit, isProcessing }: TimeRangeInpu
   };
 
   const handleSubmit = () => {
-    // Validate URL
-    const trimmed = url.trim();
-    if (!trimmed) {
-      setUrlError('Please enter a YouTube URL');
-      return;
-    }
-    if (!YOUTUBE_REGEX.test(trimmed)) {
-      setUrlError('Please enter a valid YouTube URL (e.g. https://youtube.com/watch?v=...)');
-      return;
+    // Validate URL only in URL mode
+    if (!hideUrlInput) {
+      const trimmed = url.trim();
+      if (!trimmed) {
+        setUrlError('Please enter a YouTube URL');
+        return;
+      }
+      if (!YOUTUBE_REGEX.test(trimmed)) {
+        setUrlError('Please enter a valid YouTube URL (e.g. https://youtube.com/watch?v=...)');
+        return;
+      }
     }
     setUrlError('');
 
@@ -113,7 +117,7 @@ export default function TimeRangeInput({ onSubmit, isProcessing }: TimeRangeInpu
     }
 
     setRangeErrors([]);
-    onSubmit(trimmed, parsedRanges);
+    onSubmit(hideUrlInput ? '' : url.trim(), parsedRanges);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -126,44 +130,58 @@ export default function TimeRangeInput({ onSubmit, isProcessing }: TimeRangeInpu
 
   return (
     <div className="w-full max-w-2xl mx-auto space-y-5">
-      {/* URL Input */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex-1 relative">
-          <label htmlFor="manual-url" className="sr-only">YouTube URL</label>
-          <input
-            id="manual-url"
-            type="url"
-            placeholder="Paste YouTube URL here..."
-            value={url}
-            onChange={(e) => {
-              setUrl(e.target.value);
-              if (urlError) setUrlError('');
-            }}
-            onKeyDown={handleKeyDown}
-            disabled={isProcessing}
-            aria-describedby={urlError ? 'manual-url-error' : undefined}
-            aria-invalid={!!urlError}
-            className={`
-              w-full px-4 py-3.5 rounded-xl
-              bg-muted border
-              text-foreground placeholder:text-foreground/30
-              text-base font-normal
-              outline-none
-              transition-all duration-200 ease-out
-              ${urlError
-                ? 'border-destructive/60 focus:border-destructive focus:ring-2 focus:ring-destructive/20'
-                : 'border-border focus:border-primary focus:ring-2 focus:ring-primary/20'
-              }
-              ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}
-            `}
-          />
-          {urlError && (
-            <p id="manual-url-error" role="alert" className="mt-2 text-sm text-destructive">
-              {urlError}
-            </p>
-          )}
+      {/* URL Input / File label */}
+      {hideUrlInput ? (
+        <div className="p-4 rounded-xl bg-muted/30 border border-border">
+          <div className="flex items-center gap-3">
+            <FileVideo className="w-5 h-5 text-accent" aria-hidden="true" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">
+                {fileLabel || 'Local file'}
+              </p>
+              <p className="text-xs text-foreground/40">Uploaded file — set time ranges below</p>
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex-1 relative">
+            <label htmlFor="manual-url" className="sr-only">YouTube URL</label>
+            <input
+              id="manual-url"
+              type="url"
+              placeholder="Paste YouTube URL here..."
+              value={url}
+              onChange={(e) => {
+                setUrl(e.target.value);
+                if (urlError) setUrlError('');
+              }}
+              onKeyDown={handleKeyDown}
+              disabled={isProcessing}
+              aria-describedby={urlError ? 'manual-url-error' : undefined}
+              aria-invalid={!!urlError}
+              className={`
+                w-full px-4 py-3.5 rounded-xl
+                bg-muted border
+                text-foreground placeholder:text-foreground/30
+                text-base font-normal
+                outline-none
+                transition-all duration-200 ease-out
+                ${urlError
+                  ? 'border-destructive/60 focus:border-destructive focus:ring-2 focus:ring-destructive/20'
+                  : 'border-border focus:border-primary focus:ring-2 focus:ring-primary/20'
+                }
+                ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}
+              `}
+            />
+            {urlError && (
+              <p id="manual-url-error" role="alert" className="mt-2 text-sm text-destructive">
+                {urlError}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Time Range Cards */}
       <div className="space-y-3">

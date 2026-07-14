@@ -2,10 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
 import dotenv from 'dotenv';
 import * as archiver from 'archiver';
+import multer from 'multer';
 import { runPipeline } from './pipeline.js';
 import { runManualPipeline } from './manual-pipeline.js';
 import type { TimeRange } from './manual-pipeline.js';
@@ -21,17 +23,196 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 
 // Paths
 const outputDir = path.resolve(__dirname, '..', 'output');
+const uploadsDir = path.resolve(__dirname, '..', 'uploads');
+
+// In-memory store for uploaded files: fileId -> { filePath, fileName, fileSize }
+const uploadedFiles = new Map<string, { filePath: string; fileName: string; fileSize: number }>();
+
+// Multer setup for video uploads
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    cb(null, uploadsDir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname) || '.mp4';
+    const name = `upload_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`;
+    cb(null, name);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 512 * 1024 * 1024 }, // 512 MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Unsupported file format: ${ext}. Allowed: ${allowed.join(', ')}`));
+    }
+  },
+});
 
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
-// Serve output directory for clip downloads
+// Serve output directory for clip downloads and thumbnails
 app.use('/api/clips', express.static(outputDir));
 
 // Health check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+/**
+ * POST /api/upload
+ * Upload a local video file for cropping.
+ * Accepts multipart/form-data with field name "video".
+ */
+app.post('/api/upload', (req, res) => {
+  upload.single('video')(req, res, (err) => {
+    if (err) {
+      if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+        res.status(413).json({ error: 'File terlalu besar. Maksimal 512 MB.' });
+        return;
+      }
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      res.status(400).json({ error: message });
+      return;
+    }
+
+    if (!req.file) {
+      res.status(400).json({ error: 'No video file provided. Please select a file to upload.' });
+      return;
+    }
+
+    const fileId = crypto.randomUUID();
+    const fileInfo = {
+      filePath: req.file.path,
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+    };
+    uploadedFiles.set(fileId, fileInfo);
+
+    console.log(`[Upload] File saved: ${req.file.originalname} (${(req.file.size / 1024 / 1024).toFixed(1)} MB) -> id=${fileId}`);
+
+    res.json({
+      fileId,
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+    });
+  });
+});
+
+/**
+ * GET /api/crop-local?fileId=...&ranges=[[start,end],...]
+ * SSE endpoint for cropping an uploaded local file at user-specified time ranges.
+ * Skips download stage entirely.
+ */
+app.get('/api/crop-local', async (req, res) => {
+  const fileId = req.query.fileId as string | undefined;
+  const rangesRaw = req.query.ranges as string | undefined;
+
+  // Validate fileId
+  if (!fileId || typeof fileId !== 'string') {
+    res.status(400).json({ error: 'Missing "fileId" query parameter' });
+    return;
+  }
+
+  const fileInfo = uploadedFiles.get(fileId);
+  if (!fileInfo) {
+    res.status(400).json({ error: 'File not found. It may have expired. Please upload again.' });
+    return;
+  }
+
+  if (!fs.existsSync(fileInfo.filePath)) {
+    res.status(400).json({ error: 'Uploaded file no longer exists on disk. Please upload again.' });
+    return;
+  }
+
+  // Parse ranges
+  let ranges: TimeRange[];
+  try {
+    const parsed = JSON.parse(rangesRaw || '[]');
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      res.status(400).json({ error: 'Missing or invalid "ranges" parameter. Provide a JSON array of [start, end] pairs.' });
+      return;
+    }
+    ranges = parsed.map((pair: unknown, i: number) => {
+      let start: number;
+      let end: number;
+
+      if (Array.isArray(pair)) {
+        if (pair.length < 2) throw new Error(`Range ${i} is invalid`);
+        start = Number(pair[0]);
+        end = Number(pair[1]);
+      } else if (pair && typeof pair === 'object') {
+        const obj = pair as Record<string, unknown>;
+        start = Number(obj.start);
+        end = Number(obj.end);
+      } else {
+        throw new Error(`Range ${i} is invalid`);
+      }
+
+      if (isNaN(start) || isNaN(end) || start < 0 || end <= start) {
+        throw new Error(`Range ${i} has invalid values: start=${start}, end=${end}`);
+      }
+      return { start, end };
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Invalid ranges format';
+    res.status(400).json({ error: `Invalid ranges: ${msg}` });
+    return;
+  }
+
+  if (ranges.length > 5) {
+    res.status(400).json({ error: 'Maximum 5 time ranges allowed.' });
+    return;
+  }
+
+  // Set up SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders();
+
+  const sendEvent = (stage: string, progress: number, extra?: Record<string, unknown>) => {
+    const data = JSON.stringify({ stage, progress, ...extra });
+    res.write(`data: ${data}\n\n`);
+  };
+
+  let aborted = false;
+  req.on('close', () => { aborted = true; });
+
+  try {
+    // Import and run a modified manual pipeline that uses local file instead of downloading
+    const { runLocalFilePipeline } = await import('./local-file-pipeline.js');
+    const clips = await runLocalFilePipeline(fileInfo.filePath, ranges, (stage, progress, extra) => {
+      if (!aborted) sendEvent(stage, progress, extra);
+    });
+
+    if (!aborted) {
+      sendEvent('done', 100, { clips });
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+    console.error('[CropLocal] Error:', message);
+    if (!aborted) {
+      sendEvent('error', 0, { message });
+    }
+  }
+
+  if (!aborted) {
+    res.end();
+  }
 });
 
 /**
@@ -251,6 +432,7 @@ app.get('/api/download-code', (req, res) => {
   const exclude = new Set([
     'node_modules',
     'output',
+    'uploads',
     '.env',
     'dist',
     '.git',
