@@ -117,6 +117,7 @@ app.post('/api/upload', (req, res) => {
 app.get('/api/crop-local', async (req, res) => {
   const fileId = req.query.fileId as string | undefined;
   const rangesRaw = req.query.ranges as string | undefined;
+  const transcript = req.query.transcript as string | undefined;
 
   // Validate fileId
   if (!fileId || typeof fileId !== 'string') {
@@ -197,7 +198,7 @@ app.get('/api/crop-local', async (req, res) => {
     const { runLocalFilePipeline } = await import('./local-file-pipeline.js');
     const clips = await runLocalFilePipeline(fileInfo.filePath, ranges, (stage, progress, extra) => {
       if (!aborted) sendEvent(stage, progress, extra);
-    });
+    }, transcript);
 
     if (!aborted) {
       sendEvent('done', 100, { clips });
@@ -289,6 +290,7 @@ app.get('/api/generate', async (req, res) => {
 app.get('/api/crop-manual', async (req, res) => {
   const url = req.query.url as string | undefined;
   const rangesRaw = req.query.ranges as string | undefined;
+  const transcript = req.query.transcript as string | undefined;
 
   // Validate URL
   if (!url || typeof url !== 'string') {
@@ -370,7 +372,7 @@ app.get('/api/crop-manual', async (req, res) => {
       if (!aborted) {
         sendEvent(stage, progress, extra);
       }
-    });
+    }, transcript);
 
     if (!aborted) {
       sendEvent('done', 100, { clips });

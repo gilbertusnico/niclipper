@@ -2,10 +2,12 @@
  * Local File Pipeline — Crop an uploaded local video at user-specified time ranges
  *
  * Skips download stage entirely since the file is already on disk.
- * 1. Crop each specified time range to 9:16 vertical
- * 2. Render final clips + thumbnails
+ * 1. Auto-transcribe for subtitles (silent fallback if fails)
+ * 2. Crop each specified time range to 9:16 vertical (with or without subtitles)
+ * 3. Render final clips + thumbnails
  */
 
+import { transcribeAudio } from './transcriber.js';
 import { cropClips } from './cropper.js';
 import { renderFinalClips } from './renderer.js';
 import type { ClipResult, ViralMoment, ProgressCallback } from './types.js';
@@ -15,14 +17,38 @@ export interface TimeRange {
   end: number;
 }
 
+/**
+ * Run the local file cropping pipeline.
+ * Optionally accepts a pre-generated transcript.
+ * If none is provided, attempts auto-transcription for subtitles.
+ */
 export async function runLocalFilePipeline(
   filePath: string,
   ranges: TimeRange[],
   emitProgress: ProgressCallback,
+  transcript?: string, // optional — if omitted, pipeline auto-transcribes
 ): Promise<ClipResult[]> {
-  // ── Stage 1: Crop ──────────────────────────────────────────────────
+  // ── Stage 1: Transcribe (optional — for subtitles) ────────────────
+  let resolvedTranscript: string | undefined = transcript;
+
+  if (!resolvedTranscript) {
+    emitProgress('transcribing', 0);
+    console.log('[LocalFilePipeline] Auto-transcribing for subtitles...');
+    try {
+      resolvedTranscript = await transcribeAudio(filePath, (progress) => {
+        emitProgress('transcribing', progress);
+      });
+      emitProgress('transcribing', 100);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Transcription failed';
+      console.warn(`[LocalFilePipeline] Transcription failed, proceeding without subtitles: ${msg}`);
+      emitProgress('transcribing', 100); // move past it
+    }
+  }
+
+  // ── Stage 2: Crop ──────────────────────────────────────────────────
   emitProgress('cropping', 0);
-  console.log('[LocalFilePipeline] Stage 1: Cropping clips from local file...');
+  console.log('[LocalFilePipeline] Stage 2: Cropping clips from local file...');
 
   // Build ViralMoment[] from user-specified ranges
   const moments: ViralMoment[] = ranges.map((r, i) => ({
@@ -43,7 +69,7 @@ export async function runLocalFilePipeline(
       const cropped = await cropClips(filePath, moment, i + 1, (subProgress) => {
         const overall = Math.round(((i + subProgress / 100) / totalMoments) * 100);
         emitProgress('cropping', overall, { clip: i + 1 });
-      });
+      }, resolvedTranscript);
       croppedFiles.push(cropped);
     }
     emitProgress('cropping', 100);
@@ -52,9 +78,9 @@ export async function runLocalFilePipeline(
     throw new Error(`Cropping failed: ${msg}`);
   }
 
-  // ── Stage 2: Render ────────────────────────────────────────────────
+  // ── Stage 3: Render ────────────────────────────────────────────────
   emitProgress('rendering', 0);
-  console.log('[LocalFilePipeline] Stage 2: Rendering final clips...');
+  console.log('[LocalFilePipeline] Stage 3: Rendering final clips...');
 
   let clips: ClipResult[];
   try {

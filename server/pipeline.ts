@@ -95,7 +95,7 @@ export async function runPipeline(
       const cropped = await cropClips(videoPath, moment, i + 1, (subProgress) => {
         const overall = Math.round(((i + subProgress / 100) / totalMoments) * 100);
         emitProgress('cropping', overall, { clip: i + 1 });
-      });
+      }, transcript);
       croppedFiles.push(cropped);
 
       console.log(`[Pipeline] Cropped clip ${i + 1}: ${moment.startTime}s - ${moment.endTime}s`);
