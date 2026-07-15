@@ -16,14 +16,17 @@ export type { ClipResult, ViralMoment, ProgressCallback };
 /**
  * Run the full Niclipper pipeline:
  * 1. Download video from YouTube
- * 2. Extract audio and transcribe
+ * 2. Extract audio and transcribe (unless subtitles='none')
  * 3. Analyze transcript for viral moments
  * 4. Crop each moment to 9:16 vertical
  * 5. Render final clips
+ *
+ * @param subtitles - 'auto' (default, whisper transcribes), 'none' (skip), 'manual' (use provided)
  */
 export async function runPipeline(
   url: string,
   emitProgress: ProgressCallback,
+  subtitles: 'auto' | 'none' | 'manual' = 'auto',
 ): Promise<ClipResult[]> {
   // ── Stage 1: Download ──────────────────────────────────────────────
   emitProgress('downloading', 0);
@@ -41,7 +44,7 @@ export async function runPipeline(
     throw new Error(`Download failed: ${msg}`);
   }
 
-  // ── Stage 2: Transcribe ───────────────────────────────────────────
+  // ── Stage 2: Transcribe (always needed for analysis, even if subtitles='none') ──
   emitProgress('transcribing', 0);
   console.log('[Pipeline] Stage 2: Transcribing audio...');
 
@@ -56,6 +59,9 @@ export async function runPipeline(
     const msg = err instanceof Error ? err.message : 'Transcription failed';
     throw new Error(`Transcription failed: ${msg}`);
   }
+
+  // If subtitles='none', strip transcript so crop/render don't bake subtitles
+  const subtitleTranscript: string | undefined = subtitles === 'none' ? undefined : transcript;
 
   // ── Stage 3: Analyze with Content Understanding Engine ──────────────
   emitProgress('analyzing', 0);
@@ -95,7 +101,7 @@ export async function runPipeline(
       const cropped = await cropClips(videoPath, moment, i + 1, (subProgress) => {
         const overall = Math.round(((i + subProgress / 100) / totalMoments) * 100);
         emitProgress('cropping', overall, { clip: i + 1 });
-      }, transcript);
+      }, subtitleTranscript);
       croppedFiles.push(cropped);
 
       console.log(`[Pipeline] Cropped clip ${i + 1}: ${moment.startTime}s - ${moment.endTime}s`);
@@ -114,7 +120,7 @@ export async function runPipeline(
   try {
     clips = await renderFinalClips(croppedFiles, moments, (progress) => {
       emitProgress('rendering', progress);
-    }, transcript, true); // skipCleanup to keep source video for re-render
+    }, subtitleTranscript, true); // skipCleanup to keep source video for re-render
     console.log(`[Pipeline] Rendered ${clips.length} final clips`);
     emitProgress('rendering', 100);
   } catch (err: unknown) {

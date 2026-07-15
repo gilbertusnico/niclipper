@@ -23,12 +23,15 @@ export interface TimeRange {
  * Run the manual cropping pipeline.
  * Optionally accepts a pre-generated transcript.
  * If none is provided, attempts auto-transcription for subtitles.
+ *
+ * @param subtitles - 'auto' (default, whisper transcribes), 'none' (skip), 'manual' (use provided transcript)
  */
 export async function runManualPipeline(
   url: string,
   ranges: TimeRange[],
   emitProgress: ProgressCallback,
   transcript?: string, // optional — if omitted, pipeline auto-transcribes
+  subtitles: 'auto' | 'none' | 'manual' = 'auto',
 ): Promise<ClipResult[]> {
   // ── Stage 1: Download ──────────────────────────────────────────────
   emitProgress('downloading', 0);
@@ -48,7 +51,13 @@ export async function runManualPipeline(
   // ── Stage 2: Transcribe (optional — for subtitles) ────────────────
   let resolvedTranscript: string | undefined = transcript;
 
-  if (!resolvedTranscript) {
+  if (subtitles === 'none') {
+    // User explicitly chose no subtitles — skip transcription entirely
+    resolvedTranscript = undefined;
+    console.log('[ManualPipeline] Stage 2: Skipping transcription (subtitles=none)');
+    emitProgress('transcribing', 100);
+  } else if (!resolvedTranscript) {
+    // No transcript provided, auto-transcribe (for 'auto' or 'manual' modes)
     emitProgress('transcribing', 0);
     console.log('[ManualPipeline] Stage 2: Auto-transcribing for subtitles...');
     try {

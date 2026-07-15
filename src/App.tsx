@@ -3,6 +3,8 @@ import { Scissors, AlertCircle, Wand2, Clock, FolderOpen } from 'lucide-react';
 import UrlInput from './components/UrlInput';
 import TimeRangeInput from './components/TimeRangeInput';
 import FileUpload from './components/FileUpload';
+import SubtitleSelector from './components/SubtitleSelector';
+import type { SubtitleMode } from './components/SubtitleSelector';
 import ProgressBar from './components/ProgressBar';
 import ClipCard from './components/ClipCard';
 
@@ -52,6 +54,7 @@ export default function App() {
   const [lastUrl, setLastUrl] = useState<string>('');
   const [lastRanges, setLastRanges] = useState<{ start: number; end: number }[]>([]);
   const [lastFileId, setLastFileId] = useState<string | null>(null);
+  const [subtitleMode, setSubtitleMode] = useState<SubtitleMode>('auto');
 
   const resetState = useCallback(() => {
     setIsProcessing(true);
@@ -66,7 +69,11 @@ export default function App() {
 
     const terminalRef = { current: false };
     const encodedUrl = encodeURIComponent(url.trim());
-    const eventSource = new EventSource(`/api/generate?url=${encodedUrl}`);
+    let endpoint = `/api/generate?url=${encodedUrl}`;
+    if (subtitleMode === 'none') {
+      endpoint += '&subtitles=none';
+    }
+    const eventSource = new EventSource(endpoint);
 
     eventSource.onmessage = (event) => {
       try {
@@ -110,7 +117,7 @@ export default function App() {
       setIsProcessing(false);
       eventSource.close();
     };
-  }, [resetState]);
+  }, [resetState, subtitleMode]);
 
   const handleManualCrop = useCallback((url: string, ranges: { start: number; end: number }[], transcript?: string) => {
     resetState();
@@ -121,6 +128,11 @@ export default function App() {
     let endpoint = `/api/crop-manual?url=${encodedUrl}&ranges=${encodedRanges}`;
     if (transcript) {
       endpoint += `&transcript=${encodeURIComponent(transcript)}`;
+    }
+    if (subtitleMode === 'none') {
+      endpoint += '&subtitles=none';
+    } else if (subtitleMode === 'manual') {
+      endpoint += '&subtitles=manual';
     }
     const eventSource = new EventSource(endpoint);
 
@@ -145,6 +157,7 @@ export default function App() {
           setClips(newClips || []);
           setLastUrl(url.trim());
           setLastRanges(ranges);
+          setLastFileId(null);
           setIsProcessing(false);
           eventSource.close();
           return;
@@ -164,7 +177,7 @@ export default function App() {
       setIsProcessing(false);
       eventSource.close();
     };
-  }, [resetState]);
+  }, [resetState, subtitleMode]);
 
   const handleLocalCrop = useCallback((_url: string, ranges: { start: number; end: number }[], transcript?: string) => {
     if (!uploadedFileId) {
@@ -180,6 +193,11 @@ export default function App() {
     let endpoint = `/api/crop-local?fileId=${encodedFileId}&ranges=${encodedRanges}`;
     if (transcript) {
       endpoint += `&transcript=${encodeURIComponent(transcript)}`;
+    }
+    if (subtitleMode === 'none') {
+      endpoint += '&subtitles=none';
+    } else if (subtitleMode === 'manual') {
+      endpoint += '&subtitles=manual';
     }
     const eventSource = new EventSource(endpoint);
 
@@ -225,7 +243,7 @@ export default function App() {
       setIsProcessing(false);
       eventSource.close();
     };
-  }, [resetState, uploadedFileId]);
+  }, [resetState, uploadedFileId, subtitleMode]);
 
   const handleUploadComplete = useCallback((fileId: string, fileName: string) => {
     setUploadedFileId(fileId);
@@ -382,6 +400,15 @@ export default function App() {
           <p className="text-sm text-foreground/50 mt-3">
             {stageLabel}
           </p>
+
+          {/* Subtitle Selector */}
+          <div className="mt-6">
+            <SubtitleSelector
+              value={subtitleMode}
+              onChange={setSubtitleMode}
+              disabledOptions={mode === 'ai' ? ['manual'] : []}
+            />
+          </div>
         </div>
       </header>
 
@@ -393,7 +420,7 @@ export default function App() {
             {mode === 'ai' ? (
               <UrlInput onSubmit={handleGenerate} isProcessing={isProcessing} />
             ) : mode === 'manual' ? (
-              <TimeRangeInput onSubmit={handleManualCrop} isProcessing={isProcessing} />
+              <TimeRangeInput onSubmit={handleManualCrop} isProcessing={isProcessing} subtitleMode={subtitleMode} />
             ) : (
               /* File mode: show upload first, then time ranges */
               <>
@@ -408,6 +435,7 @@ export default function App() {
                     isProcessing={isProcessing}
                     hideUrlInput={true}
                     fileLabel={uploadedFileName}
+                    subtitleMode={subtitleMode}
                   />
                 )}
               </>

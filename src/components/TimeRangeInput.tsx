@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Loader2, Clock, Plus, Trash2, FileVideo, FileText, ChevronDown } from 'lucide-react';
+import type { SubtitleMode } from './SubtitleSelector';
 
 interface TimeRange {
   id: number;
@@ -15,6 +16,7 @@ interface TimeRangeInputProps {
   isProcessing: boolean;
   hideUrlInput?: boolean;
   fileLabel?: string;
+  subtitleMode?: SubtitleMode;
 }
 
 const YOUTUBE_REGEX = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/i;
@@ -76,7 +78,7 @@ const DEFAULT_RANGES: TimeRange[] = [
   createEmptyRange(3, 'Clip 3'),
 ];
 
-export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, fileLabel }: TimeRangeInputProps) {
+export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, fileLabel, subtitleMode = 'auto' }: TimeRangeInputProps) {
   const [url, setUrl] = useState('');
   const [urlError, setUrlError] = useState('');
   const [ranges, setRanges] = useState<TimeRange[]>(DEFAULT_RANGES);
@@ -177,42 +179,44 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
       return;
     }
 
-    // Validate transcripts per range
+    // Validate transcripts per range (only in manual subtitle mode)
     const newTranscriptErrors: Record<number, string> = {};
     const transcriptParts: string[] = [];
     let hasTranscript = false;
 
-    for (const r of ranges) {
-      const text = (transcripts[r.id] || '').trim();
-      if (!text) continue;
+    if (subtitleMode === 'manual') {
+      for (const r of ranges) {
+        const text = (transcripts[r.id] || '').trim();
+        if (!text) continue;
 
-      hasTranscript = true;
-      const lineErrors: string[] = [];
-      const lines = text.split('\n');
+        hasTranscript = true;
+        const lineErrors: string[] = [];
+        const lines = text.split('\n');
 
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
 
-        const match = line.match(/^(\d{1,2}):(\d{2})\s+(.+)$/);
-        if (!match) {
-          lineErrors.push(`Line ${i + 1}: use format "MM:SS teks"`);
-          continue;
+          const match = line.match(/^(\d{1,2}):(\d{2})\s+(.+)$/);
+          if (!match) {
+            lineErrors.push(`Line ${i + 1}: use format "MM:SS teks"`);
+            continue;
+          }
+          const sec = parseInt(match[2], 10);
+          if (sec > 59) {
+            lineErrors.push(`Line ${i + 1}: seconds must be 0-59`);
+          }
+          if (!match[3].trim()) {
+            lineErrors.push(`Line ${i + 1}: text cannot be empty`);
+          }
         }
-        const sec = parseInt(match[2], 10);
-        if (sec > 59) {
-          lineErrors.push(`Line ${i + 1}: seconds must be 0-59`);
-        }
-        if (!match[3].trim()) {
-          lineErrors.push(`Line ${i + 1}: text cannot be empty`);
-        }
-      }
 
-      if (lineErrors.length > 0) {
-        newTranscriptErrors[r.id] = `${r.label}: ${lineErrors.join('; ')}`;
-      } else {
-        const serverText = convertToServerFormat(text);
-        if (serverText) transcriptParts.push(serverText);
+        if (lineErrors.length > 0) {
+          newTranscriptErrors[r.id] = `${r.label}: ${lineErrors.join('; ')}`;
+        } else {
+          const serverText = convertToServerFormat(text);
+          if (serverText) transcriptParts.push(serverText);
+        }
       }
     }
 
@@ -226,7 +230,7 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
     setRangeErrors([]);
     setTranscriptErrors({});
 
-    const combinedTranscript = hasTranscript && transcriptParts.length > 0
+    const combinedTranscript = subtitleMode === 'manual' && hasTranscript && transcriptParts.length > 0
       ? transcriptParts.join('\n\n')
       : undefined;
 
@@ -416,7 +420,8 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
               return null;
             })()}
 
-            {/* Transcript Section — collapsible textarea per range */}
+            {/* Transcript Section — collapsible textarea per range (only in manual mode) */}
+            {subtitleMode === 'manual' && (
             <div className="mt-3 pt-3 border-t border-border/50">
               <button
                 onClick={() => toggleTranscript(range.id)}
@@ -475,6 +480,7 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
                 </div>
               )}
             </div>
+            )}
           </div>
         ))}
 

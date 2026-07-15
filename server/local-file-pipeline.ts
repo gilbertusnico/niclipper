@@ -21,17 +21,26 @@ export interface TimeRange {
  * Run the local file cropping pipeline.
  * Optionally accepts a pre-generated transcript.
  * If none is provided, attempts auto-transcription for subtitles.
+ *
+ * @param subtitles - 'auto' (default, whisper transcribes), 'none' (skip), 'manual' (use provided transcript)
  */
 export async function runLocalFilePipeline(
   filePath: string,
   ranges: TimeRange[],
   emitProgress: ProgressCallback,
   transcript?: string, // optional — if omitted, pipeline auto-transcribes
+  subtitles: 'auto' | 'none' | 'manual' = 'auto',
 ): Promise<ClipResult[]> {
   // ── Stage 1: Transcribe (optional — for subtitles) ────────────────
   let resolvedTranscript: string | undefined = transcript;
 
-  if (!resolvedTranscript) {
+  if (subtitles === 'none') {
+    // User explicitly chose no subtitles — skip transcription entirely
+    resolvedTranscript = undefined;
+    console.log('[LocalFilePipeline] Skipping transcription (subtitles=none)');
+    emitProgress('transcribing', 100);
+  } else if (!resolvedTranscript) {
+    // No transcript provided, auto-transcribe (for 'auto' or 'manual' modes)
     emitProgress('transcribing', 0);
     console.log('[LocalFilePipeline] Auto-transcribing for subtitles...');
     try {
