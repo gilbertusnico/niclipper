@@ -116,7 +116,12 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
 
   const handleStartEdit = useCallback(() => {
     if (!clip.transcriptSegments) return;
-    setEditedText(clip.transcriptSegments.map(s => s.text).join('\n'));
+    // Show timestamp prefix so user knows which segment they're editing
+    setEditedText(
+      clip.transcriptSegments
+        .map(s => `${formatTime(s.start)} ${s.text}`)
+        .join('\n')
+    );
     setEditing(true);
   }, [clip.transcriptSegments]);
 
@@ -124,6 +129,15 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
     setEditing(false);
     setEditedText('');
   }, []);
+
+  /**
+   * Strip a leading MM:SS or M:SS timestamp prefix from a line.
+   * e.g. "03:21 Hello world" → "Hello world"
+   *      "3:21 Hello world"  → "Hello world"
+   */
+  function stripTimestampPrefix(line: string): string {
+    return line.replace(/^\d{1,2}:\d{2}\s+/, '');
+  }
 
   const handleSaveEdit = useCallback(() => {
     if (!onRerender || !clip.transcriptSegments || !editedText.trim()) return;
@@ -139,9 +153,8 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
       let text: string;
 
       if (i < lines.length) {
-        text = lines[i].trim() || seg.text;
+        text = stripTimestampPrefix(lines[i]).trim() || seg.text;
       } else {
-        // More segments than lines — reuse original for remaining ones
         text = seg.text;
       }
 
@@ -156,7 +169,7 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
       if (extra) {
         const lastIdx = rebuilt.length - 1;
         const lastSeg = segments[targetCount - 1];
-        const mergedText = lines[targetCount - 1].trim() + ' ' + extra;
+        const mergedText = stripTimestampPrefix(lines[targetCount - 1]).trim() + ' ' + extra;
         rebuilt[lastIdx] =
           `[TIMESTAMP: ${lastSeg.start.toFixed(1)} -> ${lastSeg.end.toFixed(1)}]\n${mergedText}`;
       }
@@ -406,7 +419,8 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
                     transition-all duration-150
                     focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/50
                   `}
-                  aria-label="Edit transcript text, one line per segment"
+                  aria-label="Edit transcript text, one line per segment. Timestamps (MM:SS) are shown but will be stripped on save."
+                  placeholder="Edit each line — timestamp (MM:SS) prefix is optional"
                   spellCheck
                 />
                 <div className="flex gap-2">

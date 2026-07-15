@@ -62,7 +62,7 @@ const upload = multer({
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '5mb' }));
 
 // Serve output directory for clip downloads and thumbnails
 app.use('/api/clips', express.static(outputDir));
@@ -396,25 +396,42 @@ app.get('/api/crop-manual', async (req, res) => {
 /**
  * POST /api/rerender-subtitles
  * Re-crop clips with an edited transcript (no re-transcription).
- * Accepts JSON body: { url, ranges, transcript }
+ * Accepts JSON body: { url, fileId, ranges, transcript }
+ *   - url: YouTube URL (for AI/manual YouTube clips)
+ *   - fileId: uploaded file ID (for local file clips)
  * Returns JSON response with updated clips.
  */
 app.post('/api/rerender-subtitles', express.json({ limit: '5mb' }), async (req, res) => {
-  const { url, ranges: rangesBody, transcript } = req.body as {
+  const { url, fileId, ranges: rangesBody, transcript } = req.body as {
     url?: string;
+    fileId?: string;
     ranges?: { start: number; end: number }[];
     transcript?: string;
   };
 
-  if (!url || typeof url !== 'string') {
-    res.status(400).json({ error: 'Missing "url" in request body' });
-    return;
-  }
+  const isLocalFile = !!fileId;
 
-  const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/i;
-  if (!youtubeRegex.test(url.trim())) {
-    res.status(400).json({ error: 'Invalid YouTube URL' });
-    return;
+  if (!isLocalFile) {
+    if (!url || typeof url !== 'string') {
+      res.status(400).json({ error: 'Missing "url" in request body' });
+      return;
+    }
+
+    const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/i;
+    if (!youtubeRegex.test(url.trim())) {
+      res.status(400).json({ error: 'Invalid YouTube URL' });
+      return;
+    }
+  } else {
+    const fileInfo = uploadedFiles.get(fileId);
+    if (!fileInfo) {
+      res.status(400).json({ error: 'File not found. It may have expired. Please upload again.' });
+      return;
+    }
+    if (!fs.existsSync(fileInfo.filePath)) {
+      res.status(400).json({ error: 'Uploaded file no longer exists on disk. Please upload again.' });
+      return;
+    }
   }
 
   if (!rangesBody || !Array.isArray(rangesBody) || rangesBody.length === 0) {
@@ -444,9 +461,15 @@ app.post('/api/rerender-subtitles', express.json({ limit: '5mb' }), async (req, 
   }
 
   try {
-    const clips = await runManualPipeline(url.trim(), validRanges, () => {
-      // No SSE progress needed for POST response
-    }, transcript);
+    let clips;
+
+    if (isLocalFile) {
+      const fileInfo = uploadedFiles.get(fileId!)!;
+      const { runLocalFilePipeline } = await import('./local-file-pipeline.js');
+      clips = await runLocalFilePipeline(fileInfo.filePath, validRanges, () => {}, transcript);
+    } else {
+      clips = await runManualPipeline(url!.trim(), validRanges, () => {}, transcript);
+    }
 
     res.json({ clips });
   } catch (err: unknown) {

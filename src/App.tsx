@@ -51,6 +51,7 @@ export default function App() {
   // For re-render with edited subtitles
   const [lastUrl, setLastUrl] = useState<string>('');
   const [lastRanges, setLastRanges] = useState<{ start: number; end: number }[]>([]);
+  const [lastFileId, setLastFileId] = useState<string | null>(null);
 
   const resetState = useCallback(() => {
     setIsProcessing(true);
@@ -86,6 +87,10 @@ export default function App() {
           setCurrentStage('done');
           setProgress(100);
           setClips(newClips || []);
+          // Save session for subtitle re-render (AI mode)
+          setLastUrl(url.trim());
+          setLastRanges((newClips || []).map((c: ClipData) => ({ start: c.startTime, end: c.endTime })));
+          setLastFileId(null);
           setIsProcessing(false);
           eventSource.close();
           return;
@@ -189,6 +194,10 @@ export default function App() {
           setCurrentStage('done');
           setProgress(100);
           setClips(newClips || []);
+          // Save session for subtitle re-render (local file mode)
+          setLastFileId(uploadedFileId);
+          setLastRanges(ranges);
+          setLastUrl('');
           setIsProcessing(false);
           eventSource.close();
           return;
@@ -232,7 +241,7 @@ export default function App() {
   }, [isProcessing]);
 
   const handleRerenderSubtitles = useCallback(async (editedTranscript: string) => {
-    if (!lastUrl || lastRanges.length === 0) {
+    if (lastRanges.length === 0) {
       setError('No previous crop session found. Please crop your clips first.');
       return;
     }
@@ -242,14 +251,25 @@ export default function App() {
     setError('');
 
     try {
+      const isLocalFile = !!lastFileId;
+      const body: Record<string, unknown> = {
+        ranges: lastRanges,
+        transcript: editedTranscript,
+      };
+
+      if (isLocalFile) {
+        body.fileId = lastFileId;
+      } else {
+        if (!lastUrl) {
+          throw new Error('No YouTube URL found. Please crop your clips first.');
+        }
+        body.url = lastUrl;
+      }
+
       const response = await fetch('/api/rerender-subtitles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: lastUrl,
-          ranges: lastRanges,
-          transcript: editedTranscript,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
@@ -268,7 +288,7 @@ export default function App() {
     } finally {
       setIsProcessing(false);
     }
-  }, [lastUrl, lastRanges]);
+  }, [lastUrl, lastRanges, lastFileId]);
 
   const isDone = currentStage === 'done';
 
