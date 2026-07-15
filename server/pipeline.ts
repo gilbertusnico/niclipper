@@ -114,7 +114,7 @@ export async function runPipeline(
   try {
     clips = await renderFinalClips(croppedFiles, moments, (progress) => {
       emitProgress('rendering', progress);
-    });
+    }, transcript, true); // skipCleanup to keep source video for re-render
     console.log(`[Pipeline] Rendered ${clips.length} final clips`);
     emitProgress('rendering', 100);
   } catch (err: unknown) {
@@ -122,30 +122,19 @@ export async function runPipeline(
     throw new Error(`Rendering failed: ${msg}`);
   }
 
-  // Cleanup temp files (non-blocking)
-  cleanup();
-
   return clips;
 }
 
-/**
- * Clean up temporary files
- */
-function cleanup(): void {
-  const dirs = [
-    path.resolve(__dirname, '..', 'temp'),
-  ];
-
-  for (const dir of dirs) {
-    try {
-      if (fs.existsSync(dir)) {
-        const files = fs.readdirSync(dir);
-        for (const file of files) {
-          fs.unlinkSync(path.join(dir, file));
-        }
+export function cleanupTempDir(): void {
+  const tempDir = path.resolve(__dirname, '..', 'temp');
+  try {
+    if (fs.existsSync(tempDir)) {
+      const files = fs.readdirSync(tempDir);
+      for (const file of files) {
+        fs.unlinkSync(path.join(tempDir, file));
       }
-    } catch {
-      // Non-blocking cleanup
     }
+  } catch {
+    // Non-blocking cleanup
   }
 }

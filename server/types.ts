@@ -23,6 +23,12 @@ export interface ViralMoment {
   confidence?: number;
 }
 
+export interface TranscriptSegment {
+  start: number; // seconds
+  end: number;   // seconds
+  text: string;
+}
+
 export interface ClipResult {
   id: number;
   filename: string;
@@ -46,6 +52,8 @@ export interface ClipResult {
   confidence?: number;
   /** Human-readable reason for clip selection */
   reason?: string;
+  /** Per-clip transcript segments (timed) from Whisper, for editing */
+  transcriptSegments?: TranscriptSegment[];
 }
 
 export type ProgressCallback = (

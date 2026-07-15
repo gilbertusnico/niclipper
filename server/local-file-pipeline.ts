@@ -86,7 +86,7 @@ export async function runLocalFilePipeline(
   try {
     clips = await renderFinalClips(croppedFiles, moments, (progress) => {
       emitProgress('rendering', progress);
-    });
+    }, resolvedTranscript, true);
     emitProgress('rendering', 100);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Rendering failed';

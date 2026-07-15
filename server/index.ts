@@ -28,6 +28,9 @@ const uploadsDir = path.resolve(__dirname, '..', 'uploads');
 // In-memory store for uploaded files: fileId -> { filePath, fileName, fileSize }
 const uploadedFiles = new Map<string, { filePath: string; fileName: string; fileSize: number }>();
 
+// In-memory store for downloaded YouTube videos: url -> filePath
+const downloadedVideos = new Map<string, string>();
+
 // Multer setup for video uploads
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -387,6 +390,69 @@ app.get('/api/crop-manual', async (req, res) => {
 
   if (!aborted) {
     res.end();
+  }
+});
+
+/**
+ * POST /api/rerender-subtitles
+ * Re-crop clips with an edited transcript (no re-transcription).
+ * Accepts JSON body: { url, ranges, transcript }
+ * Returns JSON response with updated clips.
+ */
+app.post('/api/rerender-subtitles', express.json({ limit: '5mb' }), async (req, res) => {
+  const { url, ranges: rangesBody, transcript } = req.body as {
+    url?: string;
+    ranges?: { start: number; end: number }[];
+    transcript?: string;
+  };
+
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Missing "url" in request body' });
+    return;
+  }
+
+  const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/i;
+  if (!youtubeRegex.test(url.trim())) {
+    res.status(400).json({ error: 'Invalid YouTube URL' });
+    return;
+  }
+
+  if (!rangesBody || !Array.isArray(rangesBody) || rangesBody.length === 0) {
+    res.status(400).json({ error: 'Missing or invalid "ranges"' });
+    return;
+  }
+
+  if (!transcript || typeof transcript !== 'string' || transcript.trim().length === 0) {
+    res.status(400).json({ error: 'Missing or empty "transcript"' });
+    return;
+  }
+
+  let validRanges: TimeRange[];
+  try {
+    validRanges = rangesBody.map((r, i) => {
+      const start = Number(r.start);
+      const end = Number(r.end);
+      if (isNaN(start) || isNaN(end) || start < 0 || end <= start) {
+        throw new Error(`Range ${i} has invalid values`);
+      }
+      return { start, end };
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Invalid ranges';
+    res.status(400).json({ error: `Invalid ranges: ${msg}` });
+    return;
+  }
+
+  try {
+    const clips = await runManualPipeline(url.trim(), validRanges, () => {
+      // No SSE progress needed for POST response
+    }, transcript);
+
+    res.json({ clips });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+    console.error('[RerenderSubtitles] Error:', message);
+    res.status(500).json({ error: message });
   }
 });
 

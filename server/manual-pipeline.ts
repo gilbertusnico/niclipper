@@ -13,12 +13,6 @@ import { transcribeAudio } from './transcriber.js';
 import { cropClips } from './cropper.js';
 import { renderFinalClips } from './renderer.js';
 import type { ClipResult, ViralMoment, ProgressCallback } from './types.js';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 export interface TimeRange {
   start: number; // in seconds
@@ -109,15 +103,12 @@ export async function runManualPipeline(
   try {
     clips = await renderFinalClips(croppedFiles, moments, (progress) => {
       emitProgress('rendering', progress);
-    });
+    }, resolvedTranscript, true); // skipCleanup to keep source video for re-render
     emitProgress('rendering', 100);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Rendering failed';
     throw new Error(`Rendering failed: ${msg}`);
   }
-
-  // Cleanup temp files
-  cleanup();
 
   return clips;
 }
@@ -126,18 +117,4 @@ function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-}
-
-function cleanup(): void {
-  const tempDir = path.resolve(__dirname, '..', 'temp');
-  try {
-    if (fs.existsSync(tempDir)) {
-      const files = fs.readdirSync(tempDir);
-      for (const file of files) {
-        fs.unlinkSync(path.join(tempDir, file));
-      }
-    }
-  } catch {
-    // Non-blocking cleanup
-  }
 }

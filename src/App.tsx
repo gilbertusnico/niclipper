@@ -6,6 +6,12 @@ import FileUpload from './components/FileUpload';
 import ProgressBar from './components/ProgressBar';
 import ClipCard from './components/ClipCard';
 
+interface TranscriptSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
 interface ClipData {
   id: number;
   filename: string;
@@ -23,6 +29,7 @@ interface ClipData {
   narrativeStages?: string[];
   contentType?: string;
   confidence?: number;
+  transcriptSegments?: TranscriptSegment[];
 }
 
 type AppStage = '' | 'downloading' | 'transcribing' | 'analyzing' | 'cropping' | 'rendering' | 'done' | 'error';
@@ -40,6 +47,10 @@ export default function App() {
   // File upload state
   const [uploadedFileId, setUploadedFileId] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
+
+  // For re-render with edited subtitles
+  const [lastUrl, setLastUrl] = useState<string>('');
+  const [lastRanges, setLastRanges] = useState<{ start: number; end: number }[]>([]);
 
   const resetState = useCallback(() => {
     setIsProcessing(true);
@@ -123,6 +134,8 @@ export default function App() {
           setCurrentStage('done');
           setProgress(100);
           setClips(newClips || []);
+          setLastUrl(url.trim());
+          setLastRanges(ranges);
           setIsProcessing(false);
           eventSource.close();
           return;
@@ -217,6 +230,45 @@ export default function App() {
       setUploadedFileName('');
     }
   }, [isProcessing]);
+
+  const handleRerenderSubtitles = useCallback(async (editedTranscript: string) => {
+    if (!lastUrl || lastRanges.length === 0) {
+      setError('No previous crop session found. Please crop your clips first.');
+      return;
+    }
+
+    setIsProcessing(true);
+    setCurrentStage('rendering');
+    setError('');
+
+    try {
+      const response = await fetch('/api/rerender-subtitles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: lastUrl,
+          ranges: lastRanges,
+          transcript: editedTranscript,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to re-render subtitles');
+      }
+
+      const data = await response.json();
+      setClips(data.clips || []);
+      setCurrentStage('done');
+      setProgress(100);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Re-render failed';
+      setError(msg);
+      setCurrentStage('error');
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [lastUrl, lastRanges]);
 
   const isDone = currentStage === 'done';
 
@@ -369,7 +421,7 @@ export default function App() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {clips.map((clip) => (
-                  <ClipCard key={clip.id} clip={clip} />
+                  <ClipCard key={clip.id} clip={clip} onRerender={handleRerenderSubtitles} isProcessing={isProcessing} />
                 ))}
               </div>
             </section>

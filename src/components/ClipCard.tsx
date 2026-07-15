@@ -1,5 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Download, FolderOpen, Clock, Timer, Brain, Target, Sparkles, BarChart3, Play, Volume2, VolumeX } from 'lucide-react';
+import { Download, FolderOpen, Clock, Timer, Brain, Target, Sparkles, BarChart3, Play, Volume2, VolumeX, Pencil, Loader2, Check, X, FileText } from 'lucide-react';
+
+interface TranscriptSegment {
+  start: number;
+  end: number;
+  text: string;
+}
 
 interface ClipData {
   id: number;
@@ -18,10 +24,13 @@ interface ClipData {
   narrativeStages?: string[];
   contentType?: string;
   confidence?: number;
+  transcriptSegments?: TranscriptSegment[];
 }
 
 interface ClipCardProps {
   clip: ClipData;
+  onRerender?: (transcript: string) => void;
+  isProcessing?: boolean;
 }
 
 function formatTime(seconds: number): string {
@@ -30,11 +39,13 @@ function formatTime(seconds: number): string {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-export default function ClipCard({ clip }: ClipCardProps) {
+export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [muted, setMuted] = useState(true);
   const [loading, setLoading] = useState(false);
   const [thumbError, setThumbError] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editedText, setEditedText] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -98,6 +109,61 @@ export default function ClipCard({ clip }: ClipCardProps) {
     e.stopPropagation();
     setMuted(prev => !prev);
   };
+
+  const hasTranscript = clip.transcriptSegments && clip.transcriptSegments.length > 0;
+
+  const segmentCount = clip.transcriptSegments?.length ?? 0;
+
+  const handleStartEdit = useCallback(() => {
+    if (!clip.transcriptSegments) return;
+    setEditedText(clip.transcriptSegments.map(s => s.text).join('\n'));
+    setEditing(true);
+  }, [clip.transcriptSegments]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditing(false);
+    setEditedText('');
+  }, []);
+
+  const handleSaveEdit = useCallback(() => {
+    if (!onRerender || !clip.transcriptSegments || !editedText.trim()) return;
+    setEditing(false);
+
+    const lines = editedText.split('\n');
+    const segments = clip.transcriptSegments;
+    const rebuilt: string[] = [];
+    const targetCount = segments.length;
+
+    for (let i = 0; i < targetCount; i++) {
+      const seg = segments[i];
+      let text: string;
+
+      if (i < lines.length) {
+        text = lines[i].trim() || seg.text;
+      } else {
+        // More segments than lines — reuse original for remaining ones
+        text = seg.text;
+      }
+
+      rebuilt.push(
+        `[TIMESTAMP: ${seg.start.toFixed(1)} -> ${seg.end.toFixed(1)}]\n${text}`
+      );
+    }
+
+    // Extra lines from user → merge into last segment so nothing is lost
+    if (lines.length > targetCount) {
+      const extra = lines.slice(targetCount).filter(l => l.trim()).join(' ');
+      if (extra) {
+        const lastIdx = rebuilt.length - 1;
+        const lastSeg = segments[targetCount - 1];
+        const mergedText = lines[targetCount - 1].trim() + ' ' + extra;
+        rebuilt[lastIdx] =
+          `[TIMESTAMP: ${lastSeg.start.toFixed(1)} -> ${lastSeg.end.toFixed(1)}]\n${mergedText}`;
+      }
+    }
+
+    onRerender(rebuilt.join('\n\n'));
+  }, [editedText, onRerender, clip.transcriptSegments]);
 
   return (
     <div
@@ -293,6 +359,107 @@ export default function ClipCard({ clip }: ClipCardProps) {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* ── Transcript Editing ────────────────────────────── */}
+        {hasTranscript && (
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-foreground/50 flex items-center gap-1">
+                <FileText className="w-3 h-3" aria-hidden="true" />
+                Transcript ({segmentCount} segment{segmentCount !== 1 ? 's' : ''})
+              </span>
+              {!editing && (
+                <button
+                  onClick={handleStartEdit}
+                  disabled={isProcessing}
+                  className={`
+                    flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium
+                    transition-all duration-150 cursor-pointer
+                    focus:outline-none focus:ring-2 focus:ring-accent/40
+                    ${isProcessing
+                      ? 'text-foreground/20 cursor-not-allowed'
+                      : 'text-accent/70 hover:text-accent hover:bg-accent/10 active:scale-[0.97]'
+                    }
+                  `}
+                  aria-label="Edit transcript"
+                >
+                  <Pencil className="w-3 h-3" aria-hidden="true" />
+                  Edit
+                </button>
+              )}
+            </div>
+
+            {editing ? (
+              <div className="space-y-2">
+                <textarea
+                  value={editedText}
+                  onChange={e => setEditedText(e.target.value)}
+                  rows={Math.min(segmentCount, 6)}
+                  className={`
+                    w-full px-3 py-2 rounded-lg text-xs leading-relaxed
+                    bg-background border border-border
+                    text-foreground
+                    placeholder:text-foreground/30
+                    resize-y
+                    transition-all duration-150
+                    focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/50
+                  `}
+                  aria-label="Edit transcript text, one line per segment"
+                  spellCheck
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSaveEdit}
+                    disabled={isProcessing}
+                    className={`
+                      flex items-center justify-center gap-1.5
+                      flex-1 py-2 px-3 rounded-lg text-xs font-medium
+                      transition-all duration-150
+                      focus:outline-none focus:ring-2 focus:ring-accent/40
+                      cursor-pointer
+                      ${isProcessing
+                        ? 'bg-accent/40 text-white/60 cursor-not-allowed'
+                        : 'bg-accent text-white hover:opacity-90 active:scale-[0.97]'
+                      }
+                    `}
+                    aria-label="Update subtitles with edited transcript"
+                  >
+                    {isProcessing ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                    )}
+                    {isProcessing ? 'Rerendering...' : 'Update Subtitles'}
+                  </button>
+                  <button
+                    onClick={handleCancelEdit}
+                    disabled={isProcessing}
+                    className={`
+                      flex items-center justify-center gap-1.5
+                      py-2 px-3 rounded-lg text-xs font-medium
+                      border border-border text-foreground/60
+                      transition-all duration-150
+                      focus:outline-none focus:ring-2 focus:ring-primary/40
+                      cursor-pointer
+                      ${isProcessing
+                        ? 'opacity-40 cursor-not-allowed'
+                        : 'hover:bg-muted/80 hover:text-foreground active:scale-[0.97]'
+                      }
+                    `}
+                    aria-label="Cancel editing transcript"
+                  >
+                    <X className="w-3.5 h-3.5" aria-hidden="true" />
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-foreground/50 leading-relaxed line-clamp-3">
+                {clip.transcriptSegments!.map(s => s.text).join(' ')}
+              </p>
+            )}
           </div>
         )}
 

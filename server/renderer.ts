@@ -4,7 +4,8 @@ import { execSync, exec as execCb } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import { getFfmpegPath } from './ffmpeg.js';
-import type { ViralMoment, ClipResult } from './types.js';
+import { parseTranscriptToSegments, filterSegmentsForClip } from './subtitles.js';
+import type { ViralMoment, ClipResult, TranscriptSegment } from './types.js';
 
 const execAsync = promisify(execCb);
 
@@ -21,12 +22,16 @@ export type RenderProgressCallback = (progress: number) => void;
  * @param croppedFiles - Array of paths to cropped temp clips
  * @param moments - The viral moments with timestamps
  * @param onProgress - Callback for rendering progress (0-100)
- * @returns Array of clip results with filenames and metadata
+ * @param transcript - Optional full transcript string to extract per-clip segments
+ * @param skipCleanup - If true, leave temp files in place (for re-render with edited subtitles)
+ * @returns Array of clip results with filenames, metadata, and transcript segments
  */
 export async function renderFinalClips(
   croppedFiles: string[],
   moments: ViralMoment[],
   onProgress: RenderProgressCallback,
+  transcript?: string,
+  skipCleanup: boolean = false,
 ): Promise<ClipResult[]> {
   // Ensure output directory exists
   if (!fs.existsSync(outputDir)) {
@@ -78,6 +83,20 @@ export async function renderFinalClips(
     if (moment.contentType) clip.contentType = moment.contentType;
     if (moment.confidence !== undefined) clip.confidence = moment.confidence;
 
+    // Parse transcript segments for this clip
+    if (transcript && transcript.trim().length > 0) {
+      try {
+        const allSegments = parseTranscriptToSegments(transcript);
+        const clipSegments = filterSegmentsForClip(allSegments, moment.startTime, moment.endTime);
+        if (clipSegments.length > 0) {
+          clip.transcriptSegments = clipSegments;
+          console.log(`[Renderer] Attached ${clipSegments.length} transcript segments to clip ${clipIndex}`);
+        }
+      } catch (err) {
+        console.warn(`[Renderer] Failed to parse transcript for clip ${clipIndex}:`, err instanceof Error ? err.message : err);
+      }
+    }
+
     clips.push(clip);
 
     console.log(`[Renderer] Clip ${clipIndex} ready: ${outputPath} (${Math.round(duration)}s)`);
@@ -85,8 +104,12 @@ export async function renderFinalClips(
 
   onProgress(100);
 
-  // Cleanup temp files
-  cleanupTempFiles();
+  // Cleanup temp files (skip if we need them for re-render)
+  if (!skipCleanup) {
+    cleanupTempFiles();
+  } else {
+    console.log('[Renderer] Skipped temp cleanup (re-render mode)');
+  }
 
   return clips;
 }
