@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, Clock, Plus, Trash2, FileVideo } from 'lucide-react';
+import { Loader2, Clock, Plus, Trash2, FileVideo, FileText, ChevronDown } from 'lucide-react';
 
 interface TimeRange {
   id: number;
@@ -11,7 +11,7 @@ interface TimeRange {
 }
 
 interface TimeRangeInputProps {
-  onSubmit: (url: string, ranges: { start: number; end: number }[]) => void;
+  onSubmit: (url: string, ranges: { start: number; end: number }[], transcript?: string) => void;
   isProcessing: boolean;
   hideUrlInput?: boolean;
   fileLabel?: string;
@@ -36,6 +36,40 @@ function formatTimeDisplay(totalSeconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+/**
+ * Convert user's per-line "MM:SS text" into server's "[TIMESTAMP: X -> Y]\ntext" format.
+ * End time = next segment start - 0.1s, or +3s for the last segment.
+ */
+function convertToServerFormat(userText: string): string {
+  const lines = userText.split('\n');
+  const segments: { start: number; text: string }[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const match = trimmed.match(/^(\d{1,2}):(\d{2})\s+(.+)$/);
+    if (!match) continue;
+    const start = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+    segments.push({ start, text: match[3].trim() });
+  }
+
+  if (segments.length === 0) return '';
+
+  segments.sort((a, b) => a.start - b.start);
+
+  const parts: string[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    const end = i < segments.length - 1
+      ? Math.max(segments[i + 1].start - 0.1, segments[i].start + 0.5)
+      : segments[i].start + 3;
+    parts.push(`[TIMESTAMP: ${segments[i].start} -> ${end}]`);
+    parts.push(segments[i].text);
+    if (i < segments.length - 1) parts.push('');
+  }
+
+  return parts.join('\n');
+}
+
 const DEFAULT_RANGES: TimeRange[] = [
   createEmptyRange(1, 'Clip 1'),
   createEmptyRange(2, 'Clip 2'),
@@ -47,6 +81,11 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
   const [urlError, setUrlError] = useState('');
   const [ranges, setRanges] = useState<TimeRange[]>(DEFAULT_RANGES);
   const [rangeErrors, setRangeErrors] = useState<string[]>([]);
+
+  // Transcript state per range
+  const [transcripts, setTranscripts] = useState<Record<number, string>>({});
+  const [expandedTranscripts, setExpandedTranscripts] = useState<Record<number, boolean>>({});
+  const [transcriptErrors, setTranscriptErrors] = useState<Record<number, string>>({});
 
   const updateRange = (id: number, field: keyof TimeRange, value: string) => {
     setRanges(prev =>
@@ -67,6 +106,26 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
       const updated = prev.filter(r => r.id !== id);
       return updated.map((r, i) => ({ ...r, label: `Clip ${i + 1}` }));
     });
+    // Clean up transcript state for removed range
+    setTranscripts(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setExpandedTranscripts(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setTranscriptErrors(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const toggleTranscript = (id: number) => {
+    setExpandedTranscripts(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   const handleSubmit = () => {
@@ -111,13 +170,67 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
       parsedRanges.push({ start, end });
     }
 
+    // If range errors exist, stop here
     if (errors.length > 0) {
       setRangeErrors(errors);
+      setTranscriptErrors({});
+      return;
+    }
+
+    // Validate transcripts per range
+    const newTranscriptErrors: Record<number, string> = {};
+    const transcriptParts: string[] = [];
+    let hasTranscript = false;
+
+    for (const r of ranges) {
+      const text = (transcripts[r.id] || '').trim();
+      if (!text) continue;
+
+      hasTranscript = true;
+      const lineErrors: string[] = [];
+      const lines = text.split('\n');
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        const match = line.match(/^(\d{1,2}):(\d{2})\s+(.+)$/);
+        if (!match) {
+          lineErrors.push(`Line ${i + 1}: use format "MM:SS teks"`);
+          continue;
+        }
+        const sec = parseInt(match[2], 10);
+        if (sec > 59) {
+          lineErrors.push(`Line ${i + 1}: seconds must be 0-59`);
+        }
+        if (!match[3].trim()) {
+          lineErrors.push(`Line ${i + 1}: text cannot be empty`);
+        }
+      }
+
+      if (lineErrors.length > 0) {
+        newTranscriptErrors[r.id] = `${r.label}: ${lineErrors.join('; ')}`;
+      } else {
+        const serverText = convertToServerFormat(text);
+        if (serverText) transcriptParts.push(serverText);
+      }
+    }
+
+    // If any transcript errors, show them and stop
+    if (Object.keys(newTranscriptErrors).length > 0) {
+      setTranscriptErrors(newTranscriptErrors);
+      setRangeErrors([]);
       return;
     }
 
     setRangeErrors([]);
-    onSubmit(hideUrlInput ? '' : url.trim(), parsedRanges);
+    setTranscriptErrors({});
+
+    const combinedTranscript = hasTranscript && transcriptParts.length > 0
+      ? transcriptParts.join('\n\n')
+      : undefined;
+
+    onSubmit(hideUrlInput ? '' : url.trim(), parsedRanges, combinedTranscript);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -302,6 +415,66 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
               }
               return null;
             })()}
+
+            {/* Transcript Section — collapsible textarea per range */}
+            <div className="mt-3 pt-3 border-t border-border/50">
+              <button
+                onClick={() => toggleTranscript(range.id)}
+                className="flex items-center gap-2 text-xs font-medium text-foreground/50 hover:text-foreground/80 transition-colors duration-150 cursor-pointer"
+                aria-expanded={!!expandedTranscripts[range.id]}
+                aria-label={`${transcripts[range.id]?.trim() ? 'Edit' : 'Add'} transcript for ${range.label}`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>
+                  {transcripts[range.id]?.trim()
+                    ? `Transcript (${transcripts[range.id]!.trim().split('\n').filter(l => l.trim()).length} lines)`
+                    : 'Add Transcript (optional)'}
+                </span>
+                <ChevronDown
+                  className={`w-3 h-3 transition-transform duration-200 ${
+                    expandedTranscripts[range.id] ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {expandedTranscripts[range.id] && (
+                <div className="mt-2">
+                  <textarea
+                    value={transcripts[range.id] || ''}
+                    onChange={(e) => {
+                      setTranscripts(prev => ({ ...prev, [range.id]: e.target.value }));
+                      // Clear per-range error when user edits
+                      if (transcriptErrors[range.id]) {
+                        setTranscriptErrors(prev => {
+                          const next = { ...prev };
+                          delete next[range.id];
+                          return next;
+                        });
+                      }
+                    }}
+                    placeholder={`Write transcript lines in this format:\nMM:SS subtitle text\n\nExample:\n01:23 Welcome to this video\n01:25 Let's get started\n01:28 Hope you enjoy\n\nLeave empty for auto-transcribe (Whisper)`}
+                    disabled={isProcessing}
+                    rows={5}
+                    className={`w-full px-3 py-2.5 rounded-lg bg-muted border text-foreground text-sm font-mono outline-none transition-all duration-150 resize-y min-h-[100px] ${
+                      transcriptErrors[range.id]
+                        ? 'border-destructive/60 focus:border-destructive focus:ring-1 focus:ring-destructive/20'
+                        : 'border-border focus:border-primary focus:ring-1 focus:ring-primary/20'
+                    }`}
+                    aria-label={`Transcript for ${range.label}`}
+                    aria-invalid={!!transcriptErrors[range.id]}
+                    aria-describedby={transcriptErrors[range.id] ? `transcript-error-${range.id}` : undefined}
+                  />
+                  {transcriptErrors[range.id] && (
+                    <p id={`transcript-error-${range.id}`} role="alert" className="mt-1.5 text-xs text-destructive">
+                      {transcriptErrors[range.id]}
+                    </p>
+                  )}
+                  <p className="mt-1.5 text-xs text-foreground/30">
+                    Format: <code className="text-foreground/50">MM:SS subtitle text</code> — one line per subtitle segment
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         ))}
 

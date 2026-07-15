@@ -112,13 +112,17 @@ export default function App() {
     };
   }, [resetState]);
 
-  const handleManualCrop = useCallback((url: string, ranges: { start: number; end: number }[]) => {
+  const handleManualCrop = useCallback((url: string, ranges: { start: number; end: number }[], transcript?: string) => {
     resetState();
 
     const terminalRef = { current: false };
     const encodedUrl = encodeURIComponent(url.trim());
     const encodedRanges = encodeURIComponent(JSON.stringify(ranges));
-    const eventSource = new EventSource(`/api/crop-manual?url=${encodedUrl}&ranges=${encodedRanges}`);
+    let endpoint = `/api/crop-manual?url=${encodedUrl}&ranges=${encodedRanges}`;
+    if (transcript) {
+      endpoint += `&transcript=${encodeURIComponent(transcript)}`;
+    }
+    const eventSource = new EventSource(endpoint);
 
     eventSource.onmessage = (event) => {
       try {
@@ -162,7 +166,7 @@ export default function App() {
     };
   }, [resetState]);
 
-  const handleLocalCrop = useCallback((_url: string, ranges: { start: number; end: number }[]) => {
+  const handleLocalCrop = useCallback((_url: string, ranges: { start: number; end: number }[], transcript?: string) => {
     if (!uploadedFileId) {
       setError('No file uploaded. Please upload a video file first.');
       return;
@@ -173,7 +177,11 @@ export default function App() {
     const terminalRef = { current: false };
     const encodedFileId = encodeURIComponent(uploadedFileId);
     const encodedRanges = encodeURIComponent(JSON.stringify(ranges));
-    const eventSource = new EventSource(`/api/crop-local?fileId=${encodedFileId}&ranges=${encodedRanges}`);
+    let endpoint = `/api/crop-local?fileId=${encodedFileId}&ranges=${encodedRanges}`;
+    if (transcript) {
+      endpoint += `&transcript=${encodeURIComponent(transcript)}`;
+    }
+    const eventSource = new EventSource(endpoint);
 
     eventSource.onmessage = (event) => {
       try {
