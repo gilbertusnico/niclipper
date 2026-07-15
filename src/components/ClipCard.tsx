@@ -158,8 +158,14 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
         text = seg.text;
       }
 
+      // Convert offset timestamps (0-based relative to clip start) back
+      // to absolute timestamps matching the original video. The server's
+      // cropClips uses these absolute timestamps to filter which segments
+      // fall within each clip's time range.
+      const absStart = seg.start + clip.startTime;
+      const absEnd = seg.end + clip.startTime;
       rebuilt.push(
-        `[TIMESTAMP: ${seg.start.toFixed(1)} -> ${seg.end.toFixed(1)}]\n${text}`
+        `[TIMESTAMP: ${absStart.toFixed(1)} -> ${absEnd.toFixed(1)}]\n${text}`
       );
     }
 
@@ -170,8 +176,10 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
         const lastIdx = rebuilt.length - 1;
         const lastSeg = segments[targetCount - 1];
         const mergedText = stripTimestampPrefix(lines[targetCount - 1]).trim() + ' ' + extra;
+        const absStart = lastSeg.start + clip.startTime;
+        const absEnd = lastSeg.end + clip.startTime;
         rebuilt[lastIdx] =
-          `[TIMESTAMP: ${lastSeg.start.toFixed(1)} -> ${lastSeg.end.toFixed(1)}]\n${mergedText}`;
+          `[TIMESTAMP: ${absStart.toFixed(1)} -> ${absEnd.toFixed(1)}]\n${mergedText}`;
       }
     }
 
