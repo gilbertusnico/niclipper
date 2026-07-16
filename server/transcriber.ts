@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 
 const tempDir = path.resolve(__dirname, '..', 'temp');
 
-export type TranscribeProgressCallback = (progress: number) => void;
+export type TranscribeProgressCallback = (progress: number, detail?: string) => void;
 
 /**
  * Transcribe audio from a video file using local Whisper (via @xenova/transformers).
@@ -27,18 +27,18 @@ export async function transcribeAudio(
   const wavPath = path.join(tempDir, 'audio.wav');
 
   // Step 1: Extract audio to 16kHz mono WAV using FFmpeg (0-20% progress)
-  onProgress(5);
+  onProgress(5, 'Extracting audio from video...');
   console.log(`[Transcriber] Extracting audio from ${videoPath}...`);
 
   await extractAudioToWav(videoPath, wavPath, (ffmpegProgress) => {
-    onProgress(Math.round(ffmpegProgress * 0.2));
+    onProgress(Math.round(ffmpegProgress * 0.2), 'Extracting audio...');
   });
 
-  onProgress(20);
+  onProgress(20, 'Audio extracted, preparing transcription...');
   console.log(`[Transcriber] Audio extracted to ${wavPath}`);
 
   // Step 2: Transcribe using local Whisper model (20-100% progress)
-  onProgress(25);
+  onProgress(25, 'Loading AI model (Whisper)...');
   console.log('[Transcriber] Loading Whisper model...');
 
   const transcript = await transcribeWithWhisper(wavPath, (whisperProgress) => {
@@ -132,7 +132,7 @@ function readWavAsFloat32Array(filePath: string): Float32Array {
  */
 async function transcribeWithWhisper(
   audioPath: string,
-  onProgress: (progress: number) => void,
+  onProgress: TranscribeProgressCallback,
 ): Promise<string> {
   // Dynamic import — @xenova/transformers is a heavy ESM-only module
   const { pipeline, env } = await import('@xenova/transformers');
@@ -177,12 +177,19 @@ async function transcribeWithWhisper(
     progress_callback: (progress: { status: string; loaded?: number; total?: number }) => {
       if (progress.status === 'progress' && progress.loaded !== undefined && progress.total) {
         const modelLoadProgress = Math.round((progress.loaded / progress.total) * 30);
-        onProgress(modelLoadProgress);
+        // Show detailed download progress
+        const downloadedMb = (progress.loaded / 1024 / 1024).toFixed(0);
+        const totalMb = (progress.total / 1024 / 1024).toFixed(0);
+        onProgress(modelLoadProgress, `Downloading AI model... ${downloadedMb}MB / ${totalMb}MB`);
+      } else if (progress.status === 'initiate') {
+        onProgress(26, 'Starting model download (150MB)...');
+      } else if (progress.status === 'done') {
+        onProgress(55, 'Model loaded, processing audio...');
       }
     },
   });
 
-  onProgress(60);
+  onProgress(60, 'Processing audio data...');
 
   // Read the WAV file as raw PCM samples (Float32Array)
   // Node.js has no AudioContext, so we MUST pass audio data directly

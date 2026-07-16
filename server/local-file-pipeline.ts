@@ -44,8 +44,8 @@ export async function runLocalFilePipeline(
     emitProgress('transcribing', 0);
     console.log('[LocalFilePipeline] Auto-transcribing for subtitles...');
     try {
-      resolvedTranscript = await transcribeAudio(filePath, (progress) => {
-        emitProgress('transcribing', progress);
+      resolvedTranscript = await transcribeAudio(filePath, (progress, detail) => {
+        emitProgress('transcribing', progress, detail ? { detail } : undefined);
       });
       emitProgress('transcribing', 100);
     } catch (err: unknown) {

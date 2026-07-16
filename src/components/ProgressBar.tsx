@@ -3,6 +3,7 @@ import { Check, Loader2 } from 'lucide-react';
 interface ProgressBarProps {
   currentStage: string;
   progress: number;
+  detail?: string;
 }
 
 interface StageInfo {
@@ -19,7 +20,7 @@ const STAGES: StageInfo[] = [
   { key: 'done', label: 'Done' },
 ];
 
-export default function ProgressBar({ currentStage, progress }: ProgressBarProps) {
+export default function ProgressBar({ currentStage, progress, detail }: ProgressBarProps) {
   const currentIndex = STAGES.findIndex((s) => s.key === currentStage);
 
   return (
@@ -92,16 +93,27 @@ export default function ProgressBar({ currentStage, progress }: ProgressBarProps
         })}
       </div>
 
-      {/* Progress text */}
-      <p className="text-center text-sm text-foreground/50 mt-4">
-        {currentStage === 'done' ? (
-          'All clips generated!'
-        ) : currentStage === 'error' ? (
-          <span className="text-destructive">An error occurred</span>
-        ) : currentStage ? (
-          `${STAGES.find((s) => s.key === currentStage)?.label || 'Processing'}... ${Math.round(progress)}%`
-        ) : null}
-      </p>
+      {/* Progress text & detail */}
+      <div className="text-center mt-4 space-y-1">
+        <p className="text-sm text-foreground/50">
+          {currentStage === 'done' ? (
+            'All clips generated!'
+          ) : currentStage === 'error' ? (
+            <span className="text-destructive">An error occurred</span>
+          ) : currentStage ? (
+            <>
+              {STAGES.find((s) => s.key === currentStage)?.label || 'Processing'}... {Math.round(progress)}%
+            </>
+          ) : null}
+        </p>
+
+        {/* Detail message — shows model download progress, etc. */}
+        {detail && currentStage !== 'done' && currentStage !== 'error' && (
+          <p className="text-xs text-foreground/40 font-mono animate-pulse">
+            {detail}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

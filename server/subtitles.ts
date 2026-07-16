@@ -137,11 +137,12 @@ export function generateAssContent(
   // Outline: 4.0 = thickness
   // Shadow: 0
   // Alignment: 2 = bottom center
-  // MarginV: 60 = vertical margin from bottom
+  // MarginV: ~640 = position text at about 1/3 from bottom of a 1920-height video
+  // (1920 / 3 ≈ 640px from bottom edge — gives a nice elevated look)
   lines.push(
     '[V4+ Styles]',
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    'Style: TikTok,Arial,68,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,1,3.5,0,2,50,50,60,1',
+    'Style: TikTok,Arial,68,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,1,3.5,0,2,50,50,640,1',
     '',
   );
 

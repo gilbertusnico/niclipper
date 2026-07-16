@@ -23,6 +23,188 @@ interface VideoDimensions {
 }
 
 /**
+ * Analyze a video frame using sharp to find the most visually interesting
+ * region. Returns the optimal crop offset (X or Y) to center the 9:16 crop
+ * on the area with the most detail/action.
+ *
+ * For wide videos (e.g. 16:9): analyzes horizontal strips → returns X offset
+ * For tall videos (e.g. 9:16): analyzes vertical strips → returns Y offset
+ *
+ * @returns Pixel offset from center. Positive = right/down, negative = left/up, 0 = center.
+ */
+async function findSmartCropOffset(
+  videoPath: string,
+  momentStart: number,
+  momentEnd: number,
+  sourceWidth: number,
+  sourceHeight: number,
+  cropWidth: number,
+  cropHeight: number,
+  isWide: boolean,
+): Promise<number> {
+  const framePath = path.join(tempDir, `smart_frame_${Date.now()}.jpg`);
+  const midpoint = (momentStart + momentEnd) / 2;
+
+  try {
+    // Extract a single frame at the midpoint
+    const frameArgs = [
+      '-y',
+      '-ss', String(midpoint),
+      '-i', videoPath,
+      '-vframes', '1',
+      '-q:v', '2',
+      framePath,
+    ];
+    await runFfmpeg(frameArgs, { timeout: 15_000 });
+
+    if (!fs.existsSync(framePath) || fs.statSync(framePath).size === 0) {
+      return 0; // fallback to center
+    }
+
+    // Read with sharp and analyze
+    const sharp = (await import('sharp')).default;
+    const metadata = await sharp(framePath).metadata();
+    const fw = metadata.width || sourceWidth;
+    const fh = metadata.height || sourceHeight;
+
+    // Resize to a small analysis grid (320px on the long side)
+    const analysisSize = 320;
+    let analysisWidth: number;
+    let analysisHeight: number;
+    if (fw >= fh) {
+      analysisWidth = analysisSize;
+      analysisHeight = Math.round((analysisSize / fw) * fh);
+    } else {
+      analysisHeight = analysisSize;
+      analysisWidth = Math.round((analysisSize / fh) * fw);
+    }
+
+    const rawBuffer = await sharp(framePath)
+      .resize(analysisWidth, analysisHeight, { fit: 'fill' })
+      .grayscale()
+      .raw()
+      .toBuffer();
+    const data = new Uint8Array(rawBuffer.buffer, rawBuffer.byteOffset, rawBuffer.byteLength);
+
+    const numStrips = 8;
+    const stripVariances: number[] = [];
+
+    if (isWide) {
+      // Analyze vertical strips (left to right) → find best X offset
+      const stripW = Math.floor(analysisWidth / numStrips);
+
+      for (let s = 0; s < numStrips; s++) {
+        const startX = s * stripW;
+        const endX = Math.min((s + 1) * stripW, analysisWidth);
+        let sum = 0;
+        let sumSq = 0;
+        let count = 0;
+
+        for (let y = 0; y < analysisHeight; y++) {
+          for (let x = startX; x < endX; x++) {
+            const idx = y * analysisWidth + x;
+            if (idx < data.length) {
+              const val = data[idx];
+              sum += val;
+              sumSq += val * val;
+              count++;
+            }
+          }
+        }
+
+        if (count > 0) {
+          const mean = sum / count;
+          const variance = sumSq / count - mean * mean;
+          stripVariances.push(variance);
+        } else {
+          stripVariances.push(0);
+        }
+      }
+
+      // Find best strip and convert to source-space X offset
+      let maxVariance = -1;
+      let bestStrip = Math.floor(numStrips / 2);
+      for (let s = 0; s < stripVariances.length; s++) {
+        if (stripVariances[s] > maxVariance) {
+          maxVariance = stripVariances[s];
+          bestStrip = s;
+        }
+      }
+
+      const stripCenterRatio = (bestStrip + 0.5) / numStrips;
+      const idealCenterX = stripCenterRatio * sourceWidth;
+      const currentCenterX = sourceWidth / 2;
+      const offsetX = Math.round(idealCenterX - currentCenterX);
+
+      // Clamp so crop window stays within frame
+      const maxOffset = Math.round((sourceWidth - cropWidth) / 2);
+      const clampedOffset = Math.max(-maxOffset, Math.min(maxOffset, offsetX));
+
+      console.log(`[SmartCrop] Wide video: best strip ${bestStrip}/${numStrips}, var=${maxVariance.toFixed(0)}, offsetX=${clampedOffset}px`);
+      try { fs.unlinkSync(framePath); } catch { /* ignore */ }
+      return clampedOffset;
+    } else {
+      // Analyze horizontal strips (top to bottom) → find best Y offset
+      const stripW = analysisWidth;
+      const stripH = Math.floor(analysisHeight / numStrips);
+
+      for (let s = 0; s < numStrips; s++) {
+        const startY = s * stripH;
+        const endY = Math.min((s + 1) * stripH, analysisHeight);
+        let sum = 0;
+        let sumSq = 0;
+        let count = 0;
+
+        for (let y = startY; y < endY; y++) {
+          for (let x = 0; x < stripW; x++) {
+            const idx = y * analysisWidth + x;
+            if (idx < data.length) {
+              const val = data[idx];
+              sum += val;
+              sumSq += val * val;
+              count++;
+            }
+          }
+        }
+
+        if (count > 0) {
+          const mean = sum / count;
+          const variance = sumSq / count - mean * mean;
+          stripVariances.push(variance);
+        } else {
+          stripVariances.push(0);
+        }
+      }
+
+      let maxVariance = -1;
+      let bestStrip = Math.floor(numStrips / 2);
+      for (let s = 0; s < stripVariances.length; s++) {
+        if (stripVariances[s] > maxVariance) {
+          maxVariance = stripVariances[s];
+          bestStrip = s;
+        }
+      }
+
+      const stripCenterRatio = (bestStrip + 0.5) / numStrips;
+      const idealCenterY = stripCenterRatio * sourceHeight;
+      const currentCenterY = sourceHeight / 2;
+      const offsetY = Math.round(idealCenterY - currentCenterY);
+
+      const maxOffset = Math.round((sourceHeight - cropHeight) / 2);
+      const clampedOffset = Math.max(-maxOffset, Math.min(maxOffset, offsetY));
+
+      console.log(`[SmartCrop] Tall video: best strip ${bestStrip}/${numStrips}, var=${maxVariance.toFixed(0)}, offsetY=${clampedOffset}px`);
+      try { fs.unlinkSync(framePath); } catch { /* ignore */ }
+      return clampedOffset;
+    }
+  } catch (err) {
+    console.log(`[SmartCrop] Analysis failed, using center: ${err instanceof Error ? err.message : 'unknown'}`);
+    try { fs.unlinkSync(framePath); } catch { /* ignore */ }
+    return 0;
+  }
+}
+
+/**
  * Crop a viral moment segment to 1080×1920 vertical video.
  * If a transcript is provided, TikTok-style subtitles (bold white + black stroke)
  * are burned into the video using an ASS subtitle file.
@@ -76,7 +258,30 @@ export async function cropClips(
     cropY = Math.round((dimensions.height - cropHeight) / 2);
   }
 
-  console.log(`[Cropper] Source: ${dimensions.width}x${dimensions.height}, Crop: ${cropWidth}x${cropHeight}+${cropX}+${cropY}`);
+  console.log(`[Cropper] Source: ${dimensions.width}x${dimensions.height}, Center crop: ${cropWidth}x${cropHeight}+${cropX}+${cropY}`);
+
+  // ── Smart Crop: analyze frame and shift crop toward area of interest ──
+  const isWide = dimensions.width / dimensions.height > targetAspect;
+  const smartOffset = await findSmartCropOffset(
+    videoPath,
+    moment.startTime,
+    moment.endTime,
+    dimensions.width,
+    dimensions.height,
+    cropWidth,
+    cropHeight,
+    isWide,
+  );
+
+  if (isWide) {
+    // Shift crop horizontally (X axis)
+    cropX = Math.max(0, Math.min(dimensions.width - cropWidth, cropX + smartOffset));
+  } else {
+    // Shift crop vertically (Y axis)
+    cropY = Math.max(0, Math.min(dimensions.height - cropHeight, cropY + smartOffset));
+  }
+
+  console.log(`[Cropper] Smart crop adjusted: ${cropWidth}x${cropHeight}+${cropX}+${cropY}`);
 
   const duration = moment.endTime - moment.startTime;
 

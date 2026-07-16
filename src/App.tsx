@@ -43,6 +43,7 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStage, setCurrentStage] = useState<AppStage>('');
   const [progress, setProgress] = useState(0);
+  const [progressDetail, setProgressDetail] = useState('');
   const [clips, setClips] = useState<ClipData[]>([]);
   const [error, setError] = useState('');
 
@@ -78,7 +79,7 @@ export default function App() {
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        const { stage, progress: prog, clips: newClips, message } = data;
+        const { stage, progress: prog, clips: newClips, message, detail } = data;
 
         if (stage === 'error') {
           terminalRef.current = true;
@@ -93,6 +94,7 @@ export default function App() {
           terminalRef.current = true;
           setCurrentStage('done');
           setProgress(100);
+          setProgressDetail('');
           setClips(newClips || []);
           // Save session for subtitle re-render (AI mode)
           setLastUrl(url.trim());
@@ -105,6 +107,7 @@ export default function App() {
 
         setCurrentStage(stage);
         setProgress(prog || 0);
+        setProgressDetail(detail || '');
       } catch {
         // Skip malformed JSON events
       }
@@ -139,7 +142,7 @@ export default function App() {
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        const { stage, progress: prog, clips: newClips, message } = data;
+        const { stage, progress: prog, clips: newClips, message, detail } = data;
 
         if (stage === 'error') {
           terminalRef.current = true;
@@ -154,6 +157,7 @@ export default function App() {
           terminalRef.current = true;
           setCurrentStage('done');
           setProgress(100);
+          setProgressDetail('');
           setClips(newClips || []);
           setLastUrl(url.trim());
           setLastRanges(ranges);
@@ -165,6 +169,7 @@ export default function App() {
 
         setCurrentStage(stage);
         setProgress(prog || 0);
+        setProgressDetail(detail || '');
       } catch {
         // Skip malformed JSON events
       }
@@ -204,7 +209,7 @@ export default function App() {
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        const { stage, progress: prog, clips: newClips, message } = data;
+        const { stage, progress: prog, clips: newClips, message, detail } = data;
 
         if (stage === 'error') {
           terminalRef.current = true;
@@ -219,6 +224,7 @@ export default function App() {
           terminalRef.current = true;
           setCurrentStage('done');
           setProgress(100);
+          setProgressDetail('');
           setClips(newClips || []);
           // Save session for subtitle re-render (local file mode)
           setLastFileId(uploadedFileId);
@@ -231,6 +237,7 @@ export default function App() {
 
         setCurrentStage(stage);
         setProgress(prog || 0);
+        setProgressDetail(detail || '');
       } catch {
         // Skip malformed JSON events
       }
@@ -445,7 +452,7 @@ export default function App() {
           {/* Progress Section */}
           {(isProcessing || isDone || currentStage === 'error') && (
             <section className="pt-2">
-              <ProgressBar currentStage={currentStage} progress={progress} />
+              <ProgressBar currentStage={currentStage} progress={progress} detail={progressDetail} />
             </section>
           )}
 

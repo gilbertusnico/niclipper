@@ -50,8 +50,8 @@ export async function runPipeline(
 
   let transcript: string;
   try {
-    transcript = await transcribeAudio(videoPath, (progress) => {
-      emitProgress('transcribing', progress);
+    transcript = await transcribeAudio(videoPath, (progress, detail) => {
+      emitProgress('transcribing', progress, detail ? { detail } : undefined);
     });
     console.log(`[Pipeline] Transcript length: ${transcript.length} chars`);
     emitProgress('transcribing', 100);

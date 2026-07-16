@@ -1,13 +1,10 @@
 import path from 'path';
 import fs from 'fs';
-import { execSync, exec as execCb } from 'child_process';
-import { promisify } from 'util';
+import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
-import { getFfmpegPath } from './ffmpeg.js';
+import { getFfmpegPath, runFfmpeg } from './ffmpeg.js';
 import { parseTranscriptToSegments, filterSegmentsForClip } from './subtitles.js';
 import type { ViralMoment, ClipResult, TranscriptSegment } from './types.js';
-
-const execAsync = promisify(execCb);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -161,24 +158,50 @@ function cleanupTempFiles(): void {
 
 /**
  * Generate a 9:16 thumbnail for a clip.
- * Extracts 1 frame at 2 seconds into the video.
+ * Extracts 1 frame at 2 seconds into the video using runFfmpeg.
+ * Falls back to a simple frame grab if aspect-ratio forcing fails.
  */
 async function generateThumbnail(videoPath: string, clipIndex: number): Promise<void> {
-  const ffmpegBin = getFfmpegPath();
   const thumbnailPath = path.join(outputDir, `clip_${clipIndex}.jpg`);
 
   try {
-    // Extract a frame at 2s timestamp, force 9:16 aspect ratio output
-    const cmd = `"${ffmpegBin}" -y -i "${videoPath}" -ss 00:00:02 -vframes 1 -vf "scale=432:768:force_original_aspect_ratio=increase,crop=432:768" -q:v 3 "${thumbnailPath}" 2>&1 || true`;
-    await execAsync(cmd);
+    // Try 1: extract frame at 2s, scale to 9:16 (432×768)
+    const args = [
+      '-y',
+      '-i', videoPath,
+      '-ss', '00:00:02',
+      '-vframes', '1',
+      '-vf', 'scale=432:768:force_original_aspect_ratio=increase,crop=432:768',
+      '-q:v', '3',
+      thumbnailPath,
+    ];
 
-    // If file was created and has content, we're good
+    await runFfmpeg(args, { timeout: 30_000 });
+
     if (fs.existsSync(thumbnailPath) && fs.statSync(thumbnailPath).size > 0) {
       console.log(`[Renderer] Thumbnail generated: ${thumbnailPath}`);
+      return;
+    }
+  } catch (err) {
+    console.log(`[Renderer] Thumbnail attempt 1 failed for clip ${clipIndex}, trying fallback...`);
+  }
+
+  // Fallback: simple frame grab at 1s, no aspect ratio forcing
+  try {
+    const fallbackArgs = [
+      '-y',
+      '-i', videoPath,
+      '-ss', '00:00:01',
+      '-vframes', '1',
+      '-q:v', '3',
+      thumbnailPath,
+    ];
+    await runFfmpeg(fallbackArgs, { timeout: 30_000 });
+
+    if (fs.existsSync(thumbnailPath) && fs.statSync(thumbnailPath).size > 0) {
+      console.log(`[Renderer] Thumbnail generated (fallback): ${thumbnailPath}`);
     } else {
-      // Fallback: try without aspect ratio forcing, just extract any frame
-      const fallbackCmd = `"${ffmpegBin}" -y -i "${videoPath}" -ss 00:00:01 -vframes 1 -q:v 3 "${thumbnailPath}" 2>&1 || true`;
-      await execAsync(fallbackCmd);
+      console.log(`[Renderer] Thumbnail fallback also failed for clip ${clipIndex}`);
     }
   } catch (err) {
     console.log(`[Renderer] Thumbnail generation skipped for clip ${clipIndex}: ${err instanceof Error ? err.message : 'unknown error'}`);

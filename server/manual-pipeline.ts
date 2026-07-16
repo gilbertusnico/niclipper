@@ -61,8 +61,8 @@ export async function runManualPipeline(
     emitProgress('transcribing', 0);
     console.log('[ManualPipeline] Stage 2: Auto-transcribing for subtitles...');
     try {
-      resolvedTranscript = await transcribeAudio(videoPath, (progress) => {
-        emitProgress('transcribing', progress);
+      resolvedTranscript = await transcribeAudio(videoPath, (progress, detail) => {
+        emitProgress('transcribing', progress, detail ? { detail } : undefined);
       });
       emitProgress('transcribing', 100);
     } catch (err: unknown) {
