@@ -87,14 +87,14 @@ export default function VideoTitle({ title, videoRef }: VideoTitleProps) {
   if (!visible || !title) return null;
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center"
-      style={{ top: '30%' }}>
+    <div className="pointer-events-none absolute inset-0 z-20 flex justify-center"
+      style={{ top: '15%' }}>
       <span
         className={`
-          inline-block px-6 py-3 rounded-lg
+          block w-[80%] px-6 py-3 rounded-lg
           bg-white text-black
           font-bold uppercase
-          text-xl tracking-wide
+          text-xl tracking-wide text-center
           select-none
           transition-opacity duration-500 ease-out
           ${fading ? 'opacity-0' : 'opacity-100'}

@@ -180,17 +180,19 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
       return;
     }
 
-    // Validate transcripts per range (only in manual subtitle mode)
+    // Validate & assemble transcripts per range
     const newTranscriptErrors: Record<number, string> = {};
     const transcriptParts: string[] = [];
     let hasTranscript = false;
 
-    if (subtitleMode === 'manual') {
-      for (const r of ranges) {
-        const text = (transcripts[r.id] || '').trim();
-        if (!text) continue;
+    for (const r of ranges) {
+      const text = (transcripts[r.id] || '').trim();
+      if (!text) continue;
 
-        hasTranscript = true;
+      hasTranscript = true;
+
+      // Validate format strictly only in manual mode
+      if (subtitleMode === 'manual') {
         const lineErrors: string[] = [];
         const lines = text.split('\n');
 
@@ -214,11 +216,12 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
 
         if (lineErrors.length > 0) {
           newTranscriptErrors[r.id] = `${r.label}: ${lineErrors.join('; ')}`;
-        } else {
-          const serverText = convertToServerFormat(text);
-          if (serverText) transcriptParts.push(serverText);
+          continue;
         }
       }
+
+      const serverText = convertToServerFormat(text);
+      if (serverText) transcriptParts.push(serverText);
     }
 
     // If any transcript errors, show them and stop
@@ -231,7 +234,7 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
     setRangeErrors([]);
     setTranscriptErrors({});
 
-    const combinedTranscript = subtitleMode === 'manual' && hasTranscript && transcriptParts.length > 0
+    const combinedTranscript = hasTranscript && transcriptParts.length > 0
       ? transcriptParts.join('\n\n')
       : undefined;
 
