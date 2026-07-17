@@ -6,6 +6,7 @@ export interface ViralMoment {
   startTime: number;
   endTime: number;
   reason: string;
+  title?: string;
   /** Retention prediction breakdown (0-100 each) */
   retentionScore?: {
     hook3s: number;
@@ -35,6 +36,8 @@ export interface ClipResult {
   duration: number;
   startTime: number;
   endTime: number;
+  /** User-specified title, or first few words of transcript */
+  title?: string;
   /** Retention prediction breakdown (0-100 each) */
   retentionScore?: {
     hook3s: number;

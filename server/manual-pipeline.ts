@@ -17,6 +17,7 @@ import type { ClipResult, ViralMoment, ProgressCallback } from './types.js';
 export interface TimeRange {
   start: number; // in seconds
   end: number;   // in seconds
+  title?: string;
 }
 
 /**
@@ -77,6 +78,7 @@ export async function runManualPipeline(
     startTime: r.start,
     endTime: r.end,
     reason: `Manual clip ${i + 1} (${formatTime(r.start)} — ${formatTime(r.end)})`,
+    ...(r.title ? { title: r.title } : {}),
   }));
 
   // ── Stage 3: Crop ──────────────────────────────────────────────────

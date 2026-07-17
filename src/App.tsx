@@ -14,6 +14,12 @@ interface TranscriptSegment {
   text: string;
 }
 
+interface CropRange {
+  start: number;
+  end: number;
+  title?: string;
+}
+
 interface ClipData {
   id: number;
   filename: string;
@@ -32,6 +38,7 @@ interface ClipData {
   contentType?: string;
   confidence?: number;
   transcriptSegments?: TranscriptSegment[];
+  title?: string;
 }
 
 type AppStage = '' | 'downloading' | 'transcribing' | 'analyzing' | 'cropping' | 'rendering' | 'done' | 'error';
@@ -53,7 +60,7 @@ export default function App() {
 
   // For re-render with edited subtitles
   const [lastUrl, setLastUrl] = useState<string>('');
-  const [lastRanges, setLastRanges] = useState<{ start: number; end: number }[]>([]);
+  const [lastRanges, setLastRanges] = useState<CropRange[]>([]);
   const [lastFileId, setLastFileId] = useState<string | null>(null);
   const [subtitleMode, setSubtitleMode] = useState<SubtitleMode>('auto');
 
@@ -122,7 +129,7 @@ export default function App() {
     };
   }, [resetState, subtitleMode]);
 
-  const handleManualCrop = useCallback((url: string, ranges: { start: number; end: number }[], transcript?: string) => {
+  const handleManualCrop = useCallback((url: string, ranges: CropRange[], transcript?: string) => {
     resetState();
 
     const terminalRef = { current: false };
@@ -184,7 +191,7 @@ export default function App() {
     };
   }, [resetState, subtitleMode]);
 
-  const handleLocalCrop = useCallback((_url: string, ranges: { start: number; end: number }[], transcript?: string) => {
+  const handleLocalCrop = useCallback((_url: string, ranges: CropRange[], transcript?: string) => {
     if (!uploadedFileId) {
       setError('No file uploaded. Please upload a video file first.');
       return;

@@ -15,6 +15,7 @@ import type { ClipResult, ViralMoment, ProgressCallback } from './types.js';
 export interface TimeRange {
   start: number;
   end: number;
+  title?: string;
 }
 
 /**
@@ -64,6 +65,7 @@ export async function runLocalFilePipeline(
     startTime: r.start,
     endTime: r.end,
     reason: `Local clip ${i + 1} (${formatTime(r.start)} — ${formatTime(r.end)})`,
+    ...(r.title ? { title: r.title } : {}),
   }));
 
   const totalMoments = moments.length;

@@ -5,6 +5,7 @@ import type { SubtitleMode } from './SubtitleSelector';
 interface TimeRange {
   id: number;
   label: string;
+  title: string;
   startMin: string;
   startSec: string;
   endMin: string;
@@ -12,7 +13,7 @@ interface TimeRange {
 }
 
 interface TimeRangeInputProps {
-  onSubmit: (url: string, ranges: { start: number; end: number }[], transcript?: string) => void;
+  onSubmit: (url: string, ranges: { start: number; end: number; title?: string }[], transcript?: string) => void;
   isProcessing: boolean;
   hideUrlInput?: boolean;
   fileLabel?: string;
@@ -22,7 +23,7 @@ interface TimeRangeInputProps {
 const YOUTUBE_REGEX = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/i;
 
 function createEmptyRange(id: number, label: string): TimeRange {
-  return { id, label, startMin: '', startSec: '', endMin: '', endSec: '' };
+  return { id, label, title: '', startMin: '', startSec: '', endMin: '', endSec: '' };
 }
 
 function toSeconds(min: string, sec: string): number | null {
@@ -147,7 +148,7 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
 
     // Validate each range
     const errors: string[] = [];
-    const parsedRanges: { start: number; end: number }[] = [];
+    const parsedRanges: { start: number; end: number; title?: string }[] = [];
 
     for (let i = 0; i < ranges.length; i++) {
       const r = ranges[i];
@@ -169,7 +170,7 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
         continue;
       }
 
-      parsedRanges.push({ start, end });
+      parsedRanges.push({ start, end, ...(r.title.trim() ? { title: r.title.trim() } : {}) });
     }
 
     // If range errors exist, stop here
@@ -324,7 +325,7 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
             key={range.id}
             className="p-4 rounded-xl bg-muted/30 border border-border transition-all duration-200"
           >
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-foreground/80">{range.label}</span>
               {ranges.length > 1 && !isProcessing && (
                 <button
@@ -335,6 +336,19 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               )}
+            </div>
+
+            {/* Optional Title */}
+            <div className="mb-3">
+              <input
+                type="text"
+                placeholder="Title (optional) — will use first 4 words of transcript if empty"
+                value={range.title}
+                onChange={(e) => updateRange(range.id, 'title', e.target.value)}
+                disabled={isProcessing}
+                className="w-full px-3 py-1.5 rounded-lg text-xs bg-background border border-border text-foreground placeholder:text-foreground/25 outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all duration-150"
+                aria-label={`Title for ${range.label}`}
+              />
             </div>
 
             <div className="flex items-center gap-3">

@@ -74,6 +74,7 @@ export async function renderFinalClips(
 
     // Forward all available analysis metadata
     if (moment.reason) clip.reason = moment.reason;
+    if (moment.title) clip.title = moment.title;
     if (moment.finalScore !== undefined) clip.finalScore = Math.round(moment.finalScore * 100) / 100;
     if (moment.retentionScore) clip.retentionScore = moment.retentionScore;
     if (moment.narrativeStages) clip.narrativeStages = moment.narrativeStages;

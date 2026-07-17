@@ -151,6 +151,7 @@ app.get('/api/crop-local', async (req, res) => {
     ranges = parsed.map((pair: unknown, i: number) => {
       let start: number;
       let end: number;
+      let title: string | undefined;
 
       if (Array.isArray(pair)) {
         if (pair.length < 2) throw new Error(`Range ${i} is invalid`);
@@ -160,6 +161,7 @@ app.get('/api/crop-local', async (req, res) => {
         const obj = pair as Record<string, unknown>;
         start = Number(obj.start);
         end = Number(obj.end);
+        title = typeof obj.title === 'string' ? obj.title : undefined;
       } else {
         throw new Error(`Range ${i} is invalid`);
       }
@@ -167,7 +169,7 @@ app.get('/api/crop-local', async (req, res) => {
       if (isNaN(start) || isNaN(end) || start < 0 || end <= start) {
         throw new Error(`Range ${i} has invalid values: start=${start}, end=${end}`);
       }
-      return { start, end };
+      return { start, end, ...(title ? { title } : {}) };
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Invalid ranges format';
@@ -321,19 +323,17 @@ app.get('/api/crop-manual', async (req, res) => {
     ranges = parsed.map((pair: unknown, i: number) => {
       let start: number;
       let end: number;
+      let title: string | undefined;
 
       if (Array.isArray(pair)) {
-        // Array format: [start, end]
-        if (pair.length < 2) {
-          throw new Error(`Range ${i} is invalid`);
-        }
+        if (pair.length < 2) throw new Error(`Range ${i} is invalid`);
         start = Number(pair[0]);
         end = Number(pair[1]);
       } else if (pair && typeof pair === 'object') {
-        // Object format: { start, end }
         const obj = pair as Record<string, unknown>;
         start = Number(obj.start);
         end = Number(obj.end);
+        title = typeof obj.title === 'string' ? obj.title : undefined;
       } else {
         throw new Error(`Range ${i} is invalid`);
       }
@@ -341,7 +341,7 @@ app.get('/api/crop-manual', async (req, res) => {
       if (isNaN(start) || isNaN(end) || start < 0 || end <= start) {
         throw new Error(`Range ${i} has invalid values: start=${start}, end=${end}`);
       }
-      return { start, end };
+      return { start, end, ...(title ? { title } : {}) };
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Invalid ranges format';
@@ -408,7 +408,7 @@ app.post('/api/rerender-subtitles', express.json({ limit: '5mb' }), async (req, 
   const { url, fileId, ranges: rangesBody, transcript } = req.body as {
     url?: string;
     fileId?: string;
-    ranges?: { start: number; end: number }[];
+    ranges?: { start: number; end: number; title?: string }[];
     transcript?: string;
   };
 
@@ -455,7 +455,8 @@ app.post('/api/rerender-subtitles', express.json({ limit: '5mb' }), async (req, 
       if (isNaN(start) || isNaN(end) || start < 0 || end <= start) {
         throw new Error(`Range ${i} has invalid values`);
       }
-      return { start, end };
+      const title = 'title' in r && typeof r.title === 'string' ? r.title : undefined;
+      return { start, end, ...(title ? { title } : {}) };
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Invalid ranges';

@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Download, FolderOpen, Clock, Timer, Brain, Target, Sparkles, BarChart3, Play, Volume2, VolumeX, Pencil, Loader2, Check, X, FileText } from 'lucide-react';
 import WordByWordSubtitle from './WordByWordSubtitle';
+import VideoTitle from './VideoTitle';
 
 interface TranscriptSegment {
   start: number;
@@ -26,6 +27,7 @@ interface ClipData {
   contentType?: string;
   confidence?: number;
   transcriptSegments?: TranscriptSegment[];
+  title?: string;
 }
 
 interface ClipCardProps {
@@ -114,6 +116,12 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
   const hasTranscript = clip.transcriptSegments && clip.transcriptSegments.length > 0;
 
   const segmentCount = clip.transcriptSegments?.length ?? 0;
+
+  // Derive a title from the first transcript segment, or fallback to clip id
+  const clipTitle = clip.title
+    || (clip.transcriptSegments?.[0]?.text
+        ? clip.transcriptSegments[0].text.split(/\s+/).slice(0, 4).join(' ').replace(/[.,!?;:]+$/, '')
+        : `Clip ${clip.id}`);
 
   const handleStartEdit = useCallback(() => {
     if (!clip.transcriptSegments) return;
@@ -207,6 +215,10 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
               onLoadedData={() => setLoading(false)}
               onError={() => setLoading(false)}
             />
+            {/* Video title overlay — first 4 seconds */}
+            {clipTitle && (
+              <VideoTitle title={clipTitle} videoRef={videoRef} />
+            )}
             {/* Word-by-word subtitle overlay (TikTok-style) */}
             {hasTranscript && (
               <WordByWordSubtitle segments={clip.transcriptSegments!} videoRef={videoRef} />
@@ -312,7 +324,7 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
       {/* ── Info bar ────────────────────────────────────────────── */}
       <div className="p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-foreground">Clip {clip.id}</h3>
+          <h3 className="text-sm font-semibold text-foreground truncate">{clipTitle}</h3>
           <span className="flex items-center gap-1 text-xs text-foreground/50">
             <Clock className="w-3 h-3" aria-hidden="true" />
             {formatTime(clip.duration)}
