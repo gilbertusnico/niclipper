@@ -4,11 +4,6 @@ import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import type { ViralMoment } from './types.js';
 import { runFfmpeg, getFfmpegPath } from './ffmpeg.js';
-import {
-  parseTranscriptToSegments,
-  filterSegmentsForClip,
-  writeAssFile,
-} from './subtitles.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -285,26 +280,11 @@ export async function cropClips(
 
   const duration = moment.endTime - moment.startTime;
 
-  // ── Optional: Burn TikTok-style subtitles ──────────────────────
+  // ── Subtitle generation disabled ──────────────────────────────
+  // Subtitles are now rendered client-side via the WordByWordSubtitle overlay
+  // for a smoother word-by-word karaoke experience.
+  // No ASS subtitle is generated or burned into the video file.
   let assPath: string | null = null;
-
-  if (transcript && transcript.trim().length > 0) {
-    try {
-      const allSegments = parseTranscriptToSegments(transcript);
-      const clipSegments = filterSegmentsForClip(allSegments, moment.startTime, moment.endTime);
-
-      if (clipSegments.length > 0) {
-        assPath = path.join(tempDir, `subtitles_${clipIndex}.ass`);
-        writeAssFile(clipSegments, assPath, 1080, 1920);
-        console.log(`[Cropper] Burning ${clipSegments.length} subtitle segments for clip ${clipIndex}`);
-      } else {
-        console.log(`[Cropper] No subtitle segments in range for clip ${clipIndex}`);
-      }
-    } catch (err) {
-      // Don't fail the whole crop if subtitles fail
-      console.warn(`[Cropper] Subtitle generation failed for clip ${clipIndex}:`, err instanceof Error ? err.message : err);
-    }
-  }
 
   // Build raw ffmpeg args:
   // ffmpeg -ss <start> -i <input> -t <duration> -c:v libx264 -c:a aac
@@ -315,14 +295,6 @@ export async function cropClips(
     `scale=1080:1920:force_original_aspect_ratio=increase`,
     `crop=1080:1920`,
   ];
-
-  // Append ASS subtitle filter if we have an ASS file
-  if (assPath) {
-    // Escape colons (filter option separator) for the filter string
-    // On Linux/macOS paths start with / so this is mostly for safety
-    const escapedAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:');
-    vfParts.push(`ass=${escapedAssPath}`);
-  }
 
   const vf = vfParts.join(',');
 

@@ -10,7 +10,6 @@ interface WordTiming {
   word: string;
   start: number;
   end: number;
-  segmentIndex: number;
 }
 
 interface WordByWordSubtitleProps {
@@ -20,91 +19,128 @@ interface WordByWordSubtitleProps {
 
 /**
  * TikTok-style word-by-word subtitle overlay.
- * Renders words one at a time, synced to the video's currentTime.
- * Current word is highlighted in a contrasting color.
- * Positioned at 1/3 from bottom of the video.
+ *
+ * Behavior:
+ * - Only shows the CURRENT subtitle segment at a time (not all segments at once)
+ * - All words in the segment are visible
+ * - Past words: white at 70% opacity
+ * - Current word: yellow (#FFD700) with subtle glow, slightly larger font
+ * - Future words: white at 40% opacity
+ * - Positioned at 1/3 from bottom of video
+ * - Bold white text with thick black stroke for readability on any background
  */
 export default function WordByWordSubtitle({ segments, videoRef }: WordByWordSubtitleProps) {
-  const [activeWordIndex, setActiveWordIndex] = useState(-1);
-  const wordsRef = useRef<WordTiming[]>([]);
-  const rafRef = useRef<number>(0);
+  const [displayWords, setDisplayWords] = useState<WordTiming[]>([]);
+  const [activeWordIdx, setActiveWordIdx] = useState(-1);
 
-  // Build word timing array from segments — stable across renders
+  // refs to avoid stale closures in RAF
+  const wordsCacheRef = useRef<WordTiming[][]>([]);
+  const activeSegmentRef = useRef(-1);
+  const activeWordRef = useRef(-1);
+  const rafRef = useRef(0);
+
+  // Build per-segment word timings once (stable reference)
   useEffect(() => {
-    const wordTimings: WordTiming[] = [];
-    for (let si = 0; si < segments.length; si++) {
-      const seg = segments[si];
+    const allWords: WordTiming[][] = [];
+    for (const seg of segments) {
       const duration = seg.end - seg.start;
-      if (duration <= 0) continue;
-
-      // Split text into words, preserving punctuation
+      if (duration <= 0) {
+        allWords.push([]);
+        continue;
+      }
+      // Split into words, preserving trailing spaces so text flows naturally
       const words = seg.text.match(/\S+\s*/g) || [seg.text];
       const wordDuration = duration / words.length;
 
-      for (let wi = 0; wi < words.length; wi++) {
-        wordTimings.push({
-          word: words[wi],
+      allWords.push(
+        words.map((word, wi) => ({
+          word,
           start: seg.start + wi * wordDuration,
           end: seg.start + (wi + 1) * wordDuration,
-          segmentIndex: si,
-        });
-      }
+        })),
+      );
     }
-    wordsRef.current = wordTimings;
+    wordsCacheRef.current = allWords;
   }, [segments]);
 
-  // Sync with video currentTime using requestAnimationFrame
-  const syncWithVideo = useCallback(() => {
+  const tick = useCallback(() => {
     const video = videoRef.current;
-    if (!video || video.paused || video.ended) {
-      rafRef.current = requestAnimationFrame(syncWithVideo);
+    if (!video) {
+      rafRef.current = requestAnimationFrame(tick);
       return;
     }
 
-    const currentTime = video.currentTime;
-    const wordTimings = wordsRef.current;
-    let found = false;
+    const ct = video.currentTime;
+    const allWords = wordsCacheRef.current;
 
-    // Binary search would be faster but linear is fine for typical subtitle lengths
-    for (let i = wordTimings.length - 1; i >= 0; i--) {
-      const wt = wordTimings[i];
-      if (currentTime >= wt.start && currentTime < wt.end) {
-        setActiveWordIndex(i);
-        found = true;
+    // Find which segment the video is currently in
+    let segIdx = -1;
+    for (let i = 0; i < segments.length; i++) {
+      if (ct >= segments[i].start && ct < segments[i].end) {
+        segIdx = i;
         break;
       }
     }
 
-    if (!found) {
-      setActiveWordIndex(-1);
+    if (segIdx === -1) {
+      // No active segment — clear display if we were showing something
+      if (activeSegmentRef.current !== -1) {
+        activeSegmentRef.current = -1;
+        activeWordRef.current = -1;
+        setDisplayWords([]);
+        setActiveWordIdx(-1);
+      }
+      rafRef.current = requestAnimationFrame(tick);
+      return;
     }
 
-    rafRef.current = requestAnimationFrame(syncWithVideo);
-  }, [videoRef]);
+    // Update segment display only when segment changes
+    const segWords = allWords[segIdx] || [];
+    if (segIdx !== activeSegmentRef.current) {
+      activeSegmentRef.current = segIdx;
+      setDisplayWords(segWords);
+    }
 
-  // Start/stop the sync loop when video plays/pauses
+    // Find current word in segment (reverse search for efficiency)
+    let wordIdx = -1;
+    for (let i = segWords.length - 1; i >= 0; i--) {
+      if (ct >= segWords[i].start && ct < segWords[i].end) {
+        wordIdx = i;
+        break;
+      }
+    }
+
+    // Update active word only when it changes
+    if (wordIdx !== activeWordRef.current) {
+      activeWordRef.current = wordIdx;
+      setActiveWordIdx(wordIdx);
+    }
+
+    rafRef.current = requestAnimationFrame(tick);
+  }, [videoRef, segments]);
+
+  // ── RAF lifecycle: start on play, stop on pause ──────────────
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     const handlePlay = () => {
-      rafRef.current = requestAnimationFrame(syncWithVideo);
+      rafRef.current = requestAnimationFrame(tick);
     };
 
     const handlePause = () => {
       cancelAnimationFrame(rafRef.current);
     };
 
-    video.addEventListener('play', handlePlay);
-    video.addEventListener('pause', handlePause);
     const handleSeeked = () => {
-      // Force a sync on seek
       if (!video.paused) {
         cancelAnimationFrame(rafRef.current);
-        rafRef.current = requestAnimationFrame(syncWithVideo);
+        rafRef.current = requestAnimationFrame(tick);
       }
     };
 
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
     video.addEventListener('seeked', handleSeeked);
 
     return () => {
@@ -113,48 +149,47 @@ export default function WordByWordSubtitle({ segments, videoRef }: WordByWordSub
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('seeked', handleSeeked);
     };
-  }, [videoRef, syncWithVideo]);
+  }, [videoRef, tick]);
 
-  if (segments.length === 0) return null;
-
-  const wordTimings = wordsRef.current;
-  if (wordTimings.length === 0) return null;
+  // Nothing to render
+  if (displayWords.length === 0) return null;
 
   return (
     <div
-      className="absolute left-0 right-0 pointer-events-none z-30 select-none"
+      className="absolute left-0 right-0 pointer-events-none z-30 select-none text-center"
       style={{
-        // Position at 1/3 from bottom of the video container
+        // Position at 1/3 from bottom of the video container — matches TikTok style
         bottom: '33%',
-        padding: '0 16px',
+        padding: '0 12px',
       }}
       aria-live="polite"
       aria-label="Subtitles"
     >
-      <div className="flex flex-wrap justify-center gap-x-0 gap-y-0.5 text-center">
-        {wordTimings.map((wt, i) => {
-          const isActive = i === activeWordIndex;
-          const isPast = i < activeWordIndex;
+      <div className="inline-flex flex-wrap justify-center gap-x-0 gap-y-0.5 leading-snug">
+        {displayWords.map((wt, i) => {
+          const isActive = i === activeWordIdx;
+          const isPast = i < activeWordIdx;
 
           return (
             <span
               key={i}
               className={`
                 inline-block transition-all duration-150 ease-out
-                text-[22px] sm:text-[26px] md:text-[28px]
-                font-bold leading-tight
+                text-[15px] sm:text-[17px] md:text-[19px]
+                font-bold leading-snug
                 px-[1px]
                 ${isActive
-                  ? 'text-yellow-300 scale-110 drop-shadow-[0_0_8px_rgba(253,224,71,0.6)]'
+                  ? 'text-[#FFD700] scale-110 drop-shadow-[0_0_6px_rgba(255,215,0,0.5)]'
                   : isPast
-                    ? 'text-white/90'
+                    ? 'text-white/70'
                     : 'text-white/40'
                 }
               `}
               style={{
+                // Thick black stroke for readability on any video background
                 textShadow: isActive
-                  ? '2px 2px 0 rgba(0,0,0,0.9), -1px -1px 0 rgba(0,0,0,0.9), 1px -1px 0 rgba(0,0,0,0.9), -1px 1px 0 rgba(0,0,0,0.9)'
-                  : '2px 2px 0 rgba(0,0,0,0.8), -1px -1px 0 rgba(0,0,0,0.8), 1px -1px 0 rgba(0,0,0,0.8), -1px 1px 0 rgba(0,0,0,0.8)',
+                  ? '2px 2px 0 rgba(0,0,0,0.95), -1px -1px 0 rgba(0,0,0,0.95), 1px -1px 0 rgba(0,0,0,0.95), -1px 1px 0 rgba(0,0,0,0.95)'
+                  : '2px 2px 0 rgba(0,0,0,0.85), -1px -1px 0 rgba(0,0,0,0.85), 1px -1px 0 rgba(0,0,0,0.85), -1px 1px 0 rgba(0,0,0,0.85)',
               }}
             >
               {wt.word}
