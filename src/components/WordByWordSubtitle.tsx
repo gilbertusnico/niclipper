@@ -68,7 +68,7 @@ export default function WordByWordSubtitle({ segments, videoRef }: WordByWordSub
 
   return (
     <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center"
-      style={{ top: '52%' }}>
+      style={{ top: '38%' }}>
       <span
         className="inline-block max-w-[85%] text-center text-lg leading-relaxed text-white select-none"
         style={{
