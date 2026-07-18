@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Download, FolderOpen, Clock, Timer, Brain, Target, Sparkles, BarChart3, Play, Volume2, VolumeX, Pencil, Loader2, Check, X, FileText } from 'lucide-react';
-import WordByWordSubtitle from './WordByWordSubtitle';
 import VideoTitle from './VideoTitle';
 
 interface TranscriptSegment {
@@ -219,10 +218,6 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
             {/* {clipTitle && (
               <VideoTitle title={clipTitle} videoRef={videoRef} />
             )} */}
-            {/* Word-by-word subtitle overlay (TikTok-style) */}
-            {hasTranscript && (
-              <WordByWordSubtitle segments={clip.transcriptSegments!} videoRef={videoRef} />
-            )}
             {/* Mute toggle button */}
             <button
               onClick={toggleMute}
