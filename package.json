@@ -8,7 +8,8 @@
     "dev:client": "vite",
     "dev:server": "ORT_LOG_LEVEL=fatal tsx server/index.ts",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "postinstall": "node scripts/install-fonts.js"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",

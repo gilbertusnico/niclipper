@@ -7,7 +7,6 @@
  */
 
 import fs from 'fs';
-import path from 'path';
 
 export interface SubtitleSegment {
   start: number; // seconds
@@ -105,7 +104,8 @@ function escapeAssText(text: string): string {
  * Generate an ASS subtitle file content for TikTok-style subtitles.
  *
  * TikTok style = bold white text with thick black outline, centered.
- * Uses Arial Bold which is available on virtually every system.
+ * Uses Plus Jakarta Sans Bold — a modern geometric sans-serif font
+ * that's widely used in social media content.
  *
  * @param segments - Timed subtitle segments
  * @param width - Video width (default 1080)
@@ -128,13 +128,14 @@ export function generateAssContent(
   ];
 
   // ─── Styles ───────────────────────────────────────────────────
-  // TikTok-style: Arial Bold, white fill, thick black outline, no shadow
+  // TikTok-style: Plus Jakarta Sans Bold, white fill, thick black outline, no shadow.
+  // Plus Jakarta Sans is a modern geometric sans-serif, popular in social media content.
   // Color format in ASS: AABBGGRR (hex)
   // PrimaryColour: &H00FFFFFF  = white
   // OutlineColour: &H00000000  = black
   // Bold: -1 = yes
   // BorderStyle: 1 = outline
-  // Outline: 4.0 = thickness
+  // Outline: 3.5 = thickness
   // Shadow: 0
   // Alignment: 2 = bottom center
   // MarginV: ~640 = position text at about 1/3 from bottom of a 1920-height video
@@ -142,7 +143,7 @@ export function generateAssContent(
   lines.push(
     '[V4+ Styles]',
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    'Style: TikTok,Arial,68,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,1,3.5,0,2,50,50,640,1',
+    'Style: TikTok,Plus Jakarta Sans,68,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,1,3.5,0,2,50,50,640,1',
     '',
   );
 
