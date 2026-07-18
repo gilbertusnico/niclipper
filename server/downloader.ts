@@ -1,8 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
-import ytdl from '@distube/ytdl-core';
+import { spawn, execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,6 +19,62 @@ function extractVideoId(url: string): string | null {
     if (match) return match[1];
   }
   return null;
+}
+
+/** Validate that an mp4 file is playable using ffprobe */
+function isValidMp4(filePath: string): boolean {
+  try {
+    execSync(`ffprobe -v quiet -print_format json -show_format "${filePath}"`, {
+      stdio: 'pipe',
+      timeout: 5000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function getVideoInfo(url: string): Promise<{ title: string; duration: number; videoId: string }> {
+  const videoId = extractVideoId(url);
+  if (!videoId) {
+    return Promise.reject(new Error('Invalid YouTube URL. Periksa URL dan coba lagi.'));
+  }
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn('yt-dlp', [
+      '--print', '%(title)s',
+      '--print', '%(duration)s',
+      '--no-warnings',
+      url,
+    ]);
+
+    let stdout = '';
+
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+
+    proc.on('error', (err) => {
+      reject(new Error(`Gagal menjalankan yt-dlp: ${err.message}`));
+    });
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Gagal mendapatkan info video (exit code ${code})`));
+        return;
+      }
+      const lines = stdout.trim().split('\n');
+      if (lines.length < 2) {
+        reject(new Error('Gagal membaca info video'));
+        return;
+      }
+      resolve({
+        title: lines[0],
+        duration: parseInt(lines[1], 10) || 0,
+        videoId,
+      });
+    });
+  });
 }
 
 export async function downloadVideo(
@@ -40,71 +95,63 @@ export async function downloadVideo(
 
   // Skip jika sudah pernah di-download dan file valid
   if (fs.existsSync(finalPath)) {
-    try {
-      execSync(`ffprobe -v quiet -print_format json -show_format "${finalPath}"`, {
-        stdio: 'pipe',
-        timeout: 5000,
-      });
+    if (isValidMp4(finalPath)) {
       console.log(`[Downloader] Valid file already exists: ${finalPath}`);
       onProgress?.(100);
       return finalPath;
-    } catch {
-      console.log(`[Downloader] Corrupt file found, re-downloading: ${finalPath}`);
-      fs.unlinkSync(finalPath);
     }
+    console.log(`[Downloader] Corrupt file found, re-downloading: ${finalPath}`);
+    fs.unlinkSync(finalPath);
   }
 
   console.log(`[Downloader] Starting download for video ${videoId}...`);
 
   return new Promise((resolve, reject) => {
-    const stream = ytdl(url, {
-      quality: 'highest',
-      filter: 'audioandvideo',
-      playerClients: ['IOS', 'ANDROID'],
-      requestOptions: {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        },
-      },
-    });
+    const proc = spawn('yt-dlp', [
+      '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+      '-o', finalPath,
+      '--no-warnings',
+      '--newline',
+      '--progress-template', 'download:%(progress._percent_str)s',
+      url,
+    ]);
 
-    let infoEmitted = false;
+    let stderr = '';
 
-    stream.on('info', (info, format) => {
-      infoEmitted = true;
-      console.log(`[Downloader] Title: "${info.videoDetails.title}"`);
-      console.log(`[Downloader] Format: ${format.qualityLabel || 'N/A'} ${format.container}`);
-    });
-
-    stream.on('progress', (_chunkLen: number, downloaded: number, total: number) => {
-      if (total > 0 && onProgress) {
-        const pct = Math.round((downloaded / total) * 100);
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString().trim();
+      // yt-dlp outputs progress lines like "download: 45.3%"
+      const match = text.match(/download:\s*([\d.]+)%/);
+      if (match && onProgress) {
+        const pct = Math.round(parseFloat(match[1]));
         onProgress(Math.min(pct, 99));
       }
     });
 
-    stream.on('error', (err: Error) => {
-      // If info hasn't been emitted yet, the video might be unavailable
-      if (!infoEmitted) {
-        reject(new Error(`Tidak bisa mengakses video. YouTube mungkin memblokir request.\n${err.message}`));
-      } else {
-        reject(new Error(`Download gagal: ${err.message}`));
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    proc.on('error', (err) => {
+      reject(new Error(`Gagal menjalankan yt-dlp: ${err.message}`));
+    });
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        const msg = stderr.trim().split('\n').filter(l => !l.startsWith('[debug]') && !l.startsWith('[info]')).pop() || stderr;
+        reject(new Error(`Download gagal: ${msg}`));
+        return;
       }
-    });
 
-    const writeStream = fs.createWriteStream(finalPath);
+      // Verify the downloaded file is valid
+      if (!isValidMp4(finalPath)) {
+        reject(new Error('File hasil download corrupt, coba lagi.'));
+        return;
+      }
 
-    writeStream.on('error', (err) => {
-      reject(new Error(`Gagal menulis file: ${err.message}`));
-    });
-
-    writeStream.on('finish', () => {
       console.log(`[Downloader] Download complete: ${finalPath}`);
       onProgress?.(100);
       resolve(finalPath);
     });
-
-    stream.pipe(writeStream);
   });
 }
