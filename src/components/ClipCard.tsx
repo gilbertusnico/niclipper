@@ -215,10 +215,10 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
               onLoadedData={() => setLoading(false)}
               onError={() => setLoading(false)}
             />
-            {/* Video title overlay — first 4 seconds */}
-            {clipTitle && (
+            {/* Video title overlay — hidden for now */}
+            {/* {clipTitle && (
               <VideoTitle title={clipTitle} videoRef={videoRef} />
-            )}
+            )} */}
             {/* Word-by-word subtitle overlay (TikTok-style) */}
             {hasTranscript && (
               <WordByWordSubtitle segments={clip.transcriptSegments!} videoRef={videoRef} />
