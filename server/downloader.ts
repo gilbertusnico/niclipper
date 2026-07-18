@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 import ytdl from '@distube/ytdl-core';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -37,11 +38,20 @@ export async function downloadVideo(
 
   const finalPath = path.join(downloadsDir, `${videoId}.mp4`);
 
-  // Skip jika sudah pernah di-download
+  // Skip jika sudah pernah di-download dan file valid
   if (fs.existsSync(finalPath)) {
-    console.log(`[Downloader] File already exists: ${finalPath}`);
-    onProgress?.(100);
-    return finalPath;
+    try {
+      execSync(`ffprobe -v quiet -print_format json -show_format "${finalPath}"`, {
+        stdio: 'pipe',
+        timeout: 5000,
+      });
+      console.log(`[Downloader] Valid file already exists: ${finalPath}`);
+      onProgress?.(100);
+      return finalPath;
+    } catch {
+      console.log(`[Downloader] Corrupt file found, re-downloading: ${finalPath}`);
+      fs.unlinkSync(finalPath);
+    }
   }
 
   console.log(`[Downloader] Starting download for video ${videoId}...`);
