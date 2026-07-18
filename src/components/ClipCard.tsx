@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Download, FolderOpen, Clock, Timer, Brain, Target, Sparkles, BarChart3, Play, Volume2, VolumeX, Pencil, Loader2, Check, X, FileText } from 'lucide-react';
-import VideoTitle from './VideoTitle';
 
 interface TranscriptSegment {
   start: number;
@@ -116,12 +115,6 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
 
   const segmentCount = clip.transcriptSegments?.length ?? 0;
 
-  // Derive a title from the first transcript segment, or fallback to clip id
-  const clipTitle = clip.title
-    || (clip.transcriptSegments?.[0]?.text
-        ? clip.transcriptSegments[0].text.split(/\s+/).slice(0, 4).join(' ').replace(/[.,!?;:]+$/, '')
-        : `Clip ${clip.id}`);
-
   const handleStartEdit = useCallback(() => {
     if (!clip.transcriptSegments) return;
     // Show timestamp prefix so user knows which segment they're editing
@@ -214,10 +207,6 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
               onLoadedData={() => setLoading(false)}
               onError={() => setLoading(false)}
             />
-            {/* Video title overlay — hidden for now */}
-            {/* {clipTitle && (
-              <VideoTitle title={clipTitle} videoRef={videoRef} />
-            )} */}
             {/* Mute toggle button */}
             <button
               onClick={toggleMute}
@@ -319,7 +308,7 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
       {/* ── Info bar ────────────────────────────────────────────── */}
       <div className="p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-foreground truncate">{clipTitle}</h3>
+          <h3 className="text-sm font-semibold text-foreground truncate">Clip {clip.id}</h3>
           <span className="flex items-center gap-1 text-xs text-foreground/50">
             <Clock className="w-3 h-3" aria-hidden="true" />
             {formatTime(clip.duration)}
