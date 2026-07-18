@@ -7,6 +7,9 @@
  *
  * Uses user-local ~/.fonts/ directory to avoid EPERM issues
  * on systems where npm postinstall runs as non-root.
+ *
+ * Google Fonts only ships the variable-weight version for this font,
+ * so we download PlusJakartaSans[wght].ttf which covers all weights.
  */
 
 import { execSync } from 'child_process';
@@ -15,21 +18,13 @@ import { get } from 'https';
 import { homedir } from 'os';
 import { join } from 'path';
 
-// System-wide install path (may require root — we check it first)
-const SYSTEM_FONT_DIR = '/usr/share/fonts/truetype/plus-jakarta-sans';
+// System-wide install path (may need root — we check it first)
+const SYSTEM_DIR = '/usr/share/fonts/truetype/plus-jakarta-sans';
 // User-local fallback (always writable)
-const USER_FONT_DIR = join(homedir(), '.fonts', 'plus-jakarta-sans');
+const USER_DIR = join(homedir(), '.fonts', 'plus-jakarta-sans');
 
-const FONTS = [
-  {
-    name: 'PlusJakartaSans-Bold.ttf',
-    url: 'https://github.com/google/fonts/raw/main/ofl/plusjakartasans/static/PlusJakartaSans-Bold.ttf',
-  },
-  {
-    name: 'PlusJakartaSans-Regular.ttf',
-    url: 'https://github.com/google/fonts/raw/main/ofl/plusjakartasans/static/PlusJakartaSans-Regular.ttf',
-  },
-];
+const FONT_FILENAME = 'PlusJakartaSans%5Bwght%5D.ttf';
+const FONT_URL = `https://raw.githubusercontent.com/google/fonts/main/ofl/plusjakartasans/${FONT_FILENAME}`;
 
 function download(url, dest) {
   return new Promise((resolve, reject) => {
@@ -66,10 +61,11 @@ function isFontInstalled() {
 }
 
 /**
- * Check if font files exist in a directory (quick check without fc-list).
+ * Check if the font file exists in a directory.
  */
-function fontFilesExist(dir) {
-  return FONTS.every((f) => existsSync(join(dir, f.name)));
+function fontFileExists(dir) {
+  return existsSync(join(dir, 'PlusJakartaSans[wght].ttf')) ||
+         existsSync(join(dir, 'PlusJakartaSans%5Bwght%5D.ttf'));
 }
 
 async function main() {
@@ -82,19 +78,19 @@ async function main() {
   }
 
   // ── 2. Files exist in system dir (from a prior root install)? ──
-  if (fontFilesExist(SYSTEM_FONT_DIR)) {
+  if (fontFileExists(SYSTEM_DIR)) {
     console.log('[Fonts] Found font files in system dir. Running fc-cache...');
     try {
       execSync('fc-cache -f', { stdio: 'inherit' });
       console.log('[Fonts] ✅ Plus Jakarta Sans activated.');
-    } catch (e) {
+    } catch {
       console.log('[Fonts] ⚠ fc-cache skipped (non-root). Fonts will still work.');
     }
     return;
   }
 
   // ── 3. Files exist in user-local dir? ──
-  if (fontFilesExist(USER_FONT_DIR)) {
+  if (fontFileExists(USER_DIR)) {
     console.log('[Fonts] Found font files in ~/.fonts. Running fc-cache...');
     execSync('fc-cache -f', { stdio: 'inherit' });
     console.log('[Fonts] ✅ Plus Jakarta Sans activated.');
@@ -104,19 +100,17 @@ async function main() {
   // ── 4. Not installed anywhere — download to user-local dir ──
   console.log('[Fonts] Downloading to ~/.fonts/plus-jakarta-sans/...');
 
-  if (!existsSync(USER_FONT_DIR)) {
-    mkdirSync(USER_FONT_DIR, { recursive: true });
+  if (!existsSync(USER_DIR)) {
+    mkdirSync(USER_DIR, { recursive: true });
   }
 
-  for (const font of FONTS) {
-    const dest = join(USER_FONT_DIR, font.name);
-    if (existsSync(dest)) {
-      console.log(`[Fonts] ${font.name} already exists.`);
-      continue;
-    }
-    console.log(`[Fonts] Downloading ${font.name}...`);
-    await download(font.url, dest);
-    console.log(`[Fonts] ${font.name} saved.`);
+  const dest = join(USER_DIR, 'PlusJakartaSans[wght].ttf');
+  if (existsSync(dest)) {
+    console.log('[Fonts] Font file already exists.');
+  } else {
+    console.log('[Fonts] Downloading variable font (covers all weights)...');
+    await download(FONT_URL, dest);
+    console.log('[Fonts] Font saved.');
   }
 
   console.log('[Fonts] Running fc-cache...');
