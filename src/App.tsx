@@ -17,7 +17,6 @@ interface TranscriptSegment {
 interface CropRange {
   start: number;
   end: number;
-  title?: string;
 }
 
 interface ClipData {
@@ -38,7 +37,6 @@ interface ClipData {
   contentType?: string;
   confidence?: number;
   transcriptSegments?: TranscriptSegment[];
-  title?: string;
 }
 
 type AppStage = '' | 'downloading' | 'transcribing' | 'analyzing' | 'cropping' | 'rendering' | 'done' | 'error';

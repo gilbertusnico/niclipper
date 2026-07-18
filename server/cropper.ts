@@ -124,6 +124,7 @@ export async function cropClips(
     '-preset', 'fast',
     '-crf', '22',
     '-pix_fmt', 'yuv420p',
+    '-movflags', '+faststart',
     '-y', // overwrite output
     outputPath,
   ];

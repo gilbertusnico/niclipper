@@ -1,7 +1,7 @@
-import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import ytdl from '@distube/ytdl-core';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,7 +35,6 @@ export async function downloadVideo(
     fs.mkdirSync(downloadsDir, { recursive: true });
   }
 
-  const outputTemplate = path.join(downloadsDir, `${videoId}.%(ext)s`);
   const finalPath = path.join(downloadsDir, `${videoId}.mp4`);
 
   // Skip jika sudah pernah di-download
@@ -45,59 +44,50 @@ export async function downloadVideo(
     return finalPath;
   }
 
-  console.log(`[Downloader] Starting yt-dlp for video ${videoId}...`);
+  console.log(`[Downloader] Starting download for video ${videoId}...`);
 
   return new Promise((resolve, reject) => {
-    let stderrBuffer = '';
-
-    const args = [
-      url,
-      '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
-      '--merge-output-format', 'mp4',
-      '-o', outputTemplate,
-      '--no-playlist',
-      '--no-warnings',
-      '--progress', '--newline',
-    ];
-
-    const proc = spawn('yt-dlp', args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
+    const stream = ytdl(url, {
+      quality: 'highest',
+      filter: 'audioandvideo',
     });
 
-    proc.stdout?.on('data', () => {
-      // yt-dlp uses stdout for --print output only; we don't need it
+    let infoEmitted = false;
+
+    stream.on('info', (info, format) => {
+      infoEmitted = true;
+      console.log(`[Downloader] Title: "${info.videoDetails.title}"`);
+      console.log(`[Downloader] Format: ${format.qualityLabel || 'N/A'} ${format.container}`);
     });
 
-    proc.stderr?.on('data', (chunk: Buffer) => {
-      const output = chunk.toString();
-      stderrBuffer += output;
-
-      // yt-dlp outputs progress on stderr: "[download]  45.2% of ..."
-      const progressMatch = output.match(/(\d+\.?\d*)%/);
-      if (progressMatch && onProgress) {
-        const pct = parseFloat(progressMatch[1]);
+    stream.on('progress', (_chunkLen: number, downloaded: number, total: number) => {
+      if (total > 0 && onProgress) {
+        const pct = Math.round((downloaded / total) * 100);
         onProgress(Math.min(pct, 99));
       }
     });
 
-    proc.on('close', (code) => {
-      if (code === 0) {
-        console.log(`[Downloader] Download complete: ${finalPath}`);
-        onProgress?.(100);
-        resolve(finalPath);
+    stream.on('error', (err: Error) => {
+      // If info hasn't been emitted yet, the video might be unavailable
+      if (!infoEmitted) {
+        reject(new Error(`Tidak bisa mengakses video. YouTube mungkin memblokir request.\n${err.message}`));
       } else {
-        // Baca stderr untuk pesan error yang jelas
-        const errorDetail = stderrBuffer.split('\n').filter(l => l.trim()).slice(-5).join(' | ');
-        const errorMsg = errorDetail
-          ? `yt-dlp exited with code ${code}: ${errorDetail}`
-          : `yt-dlp exited with code ${code}`;
-        console.error(`[Downloader] ${errorMsg}`);
-        reject(new Error(errorMsg));
+        reject(new Error(`Download gagal: ${err.message}`));
       }
     });
 
-    proc.on('error', (err) => {
-      reject(new Error(`Failed to start yt-dlp: ${err.message}. Pastikan yt-dlp sudah terinstall.\nInstall: sudo apt install yt-dlp\nAtau: brew install yt-dlp\nAtau: pip install yt-dlp`));
+    const writeStream = fs.createWriteStream(finalPath);
+
+    writeStream.on('error', (err) => {
+      reject(new Error(`Gagal menulis file: ${err.message}`));
     });
+
+    writeStream.on('finish', () => {
+      console.log(`[Downloader] Download complete: ${finalPath}`);
+      onProgress?.(100);
+      resolve(finalPath);
+    });
+
+    stream.pipe(writeStream);
   });
 }

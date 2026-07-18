@@ -126,7 +126,24 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('[Fonts] ❌ Failed to install fonts:', err.message);
-  process.exit(1);
-});
+main()
+  .catch((err) => {
+    console.error('[Fonts] ❌ Failed to install fonts:', err.message);
+    process.exit(1);
+  })
+  .finally(() => {
+    // ── 5. Ensure yt-dlp is installed (needed by server/downloader.ts) ──
+    try {
+      console.log('[Setup] Checking yt-dlp...');
+      execSync('which yt-dlp', { stdio: 'pipe' });
+      console.log('[Setup] ✅ yt-dlp already installed.');
+    } catch {
+      console.log('[Setup] Installing yt-dlp via pip...');
+      try {
+        execSync('pip install yt-dlp', { stdio: 'inherit' });
+        console.log('[Setup] ✅ yt-dlp installed successfully.');
+      } catch (e) {
+        console.error('[Setup] ❌ Failed to install yt-dlp:', e.message);
+      }
+    }
+  });

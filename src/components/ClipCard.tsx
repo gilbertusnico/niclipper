@@ -25,7 +25,6 @@ interface ClipData {
   contentType?: string;
   confidence?: number;
   transcriptSegments?: TranscriptSegment[];
-  title?: string;
 }
 
 interface ClipCardProps {
@@ -50,7 +49,8 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const downloadUrl = `/api/clips/${clip.filename}`;
+  // Cache-busting: use startTime+endTime+id so browser re-fetches after re-render
+  const downloadUrl = `/api/clips/${clip.filename}?v=${clip.startTime}-${clip.endTime}-${clip.id}`;
   const thumbnailUrl = `/api/clips/clip_${clip.id}.jpg`;
 
   const handleDownload = () => {
