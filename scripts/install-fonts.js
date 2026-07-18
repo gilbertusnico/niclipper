@@ -92,8 +92,12 @@ async function main() {
   // ── 3. Files exist in user-local dir? ──
   if (fontFileExists(USER_DIR)) {
     console.log('[Fonts] Found font files in ~/.fonts. Running fc-cache...');
-    execSync('fc-cache -f', { stdio: 'inherit' });
-    console.log('[Fonts] ✅ Plus Jakarta Sans activated.');
+    try {
+      execSync('fc-cache -f', { stdio: 'inherit' });
+      console.log('[Fonts] ✅ Plus Jakarta Sans activated.');
+    } catch {
+      console.log('[Fonts] ⚠ fc-cache failed (non-fatal). Font files are on disk.');
+    }
     return;
   }
 
@@ -114,8 +118,12 @@ async function main() {
   }
 
   console.log('[Fonts] Running fc-cache...');
-  execSync('fc-cache -f', { stdio: 'inherit' });
-  console.log('[Fonts] ✅ Plus Jakarta Sans installed successfully.');
+  try {
+    execSync('fc-cache -f', { stdio: 'inherit' });
+    console.log('[Fonts] ✅ Plus Jakarta Sans installed successfully.');
+  } catch {
+    console.log('[Fonts] ⚠ fc-cache failed (non-fatal). Font files are on disk at ~/.fonts/plus-jakarta-sans/.');
+  }
 }
 
 main().catch((err) => {
