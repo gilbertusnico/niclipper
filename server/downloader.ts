@@ -8,6 +8,18 @@ const __dirname = path.dirname(__filename);
 
 const downloadsDir = path.resolve(__dirname, '..', 'downloads');
 
+/** Cari executable yt-dlp yang tersedia — prefer python module over binary */
+function findYtDlp(): { cmd: string; args: string[] } {
+  // Coba python3 -m yt_dlp dulu (gak pake PyInstaller binary, lebih stabil di macOS)
+  try {
+    execSync('python3 -m yt_dlp --version 2>/dev/null', { stdio: 'pipe', timeout: 5000 });
+    return { cmd: 'python3', args: ['-m', 'yt_dlp'] };
+  } catch {
+    // Fallback ke binary
+    return { cmd: 'yt-dlp', args: [] };
+  }
+}
+
 /** Extract YouTube video ID from various URL formats */
 function extractVideoId(url: string): string | null {
   const patterns = [
@@ -40,8 +52,11 @@ export function getVideoInfo(url: string): Promise<{ title: string; duration: nu
     return Promise.reject(new Error('Invalid YouTube URL. Periksa URL dan coba lagi.'));
   }
 
+  const { cmd, args } = findYtDlp();
+
   return new Promise((resolve, reject) => {
-    const proc = spawn('yt-dlp', [
+    const proc = spawn(cmd, [
+      ...args,
       '--print', '%(title)s',
       '--print', '%(duration)s',
       '--no-warnings',
@@ -106,8 +121,11 @@ export async function downloadVideo(
 
   console.log(`[Downloader] Starting download for video ${videoId}...`);
 
+  const { cmd, args } = findYtDlp();
+
   return new Promise((resolve, reject) => {
-    const proc = spawn('yt-dlp', [
+    const proc = spawn(cmd, [
+      ...args,
       '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       '-o', finalPath,
       '--no-warnings',
