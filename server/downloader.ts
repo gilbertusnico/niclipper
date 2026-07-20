@@ -8,15 +8,21 @@ const __dirname = path.dirname(__filename);
 
 const downloadsDir = path.resolve(__dirname, '..', 'downloads');
 
-/** Cari executable yt-dlp yang tersedia — prefer python module over binary */
+/** Cari executable yt-dlp yang tersedia — prefer binary over python module */
 function findYtDlp(): { cmd: string; args: string[] } {
-  // Coba python3 -m yt_dlp dulu (gak pake PyInstaller binary, lebih stabil di macOS)
+  // Coba binary yt-dlp dulu (lebih ringan, PyInstaller error Cryptodome non-fatal)
   try {
-    execSync('python3 -m yt_dlp --version 2>/dev/null', { stdio: 'pipe', timeout: 5000 });
-    return { cmd: 'python3', args: ['-m', 'yt_dlp'] };
-  } catch {
-    // Fallback ke binary
+    execSync('yt-dlp --version 2>/dev/null', { stdio: 'pipe', timeout: 5000 });
     return { cmd: 'yt-dlp', args: [] };
+  } catch {
+    // Fallback ke python3 -m yt_dlp
+    try {
+      execSync('python3 -m yt_dlp --version 2>/dev/null', { stdio: 'pipe', timeout: 5000 });
+      return { cmd: 'python3', args: ['-m', 'yt_dlp'] };
+    } catch {
+      // Fallback terakhir — npx
+      return { cmd: 'npx', args: ['yt-dlp'] };
+    }
   }
 }
 
