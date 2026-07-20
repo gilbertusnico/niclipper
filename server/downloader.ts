@@ -126,7 +126,7 @@ export async function downloadVideo(
   return new Promise((resolve, reject) => {
     const proc = spawn(cmd, [
       ...args,
-      '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+      '-f', 'best[ext=mp4]/best',
       '-o', finalPath,
       '--no-warnings',
       '--newline',
