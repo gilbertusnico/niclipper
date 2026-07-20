@@ -7,7 +7,7 @@ interface FileUploadProps {
 }
 
 const ACCEPTED_TYPES = '.mp4,.mov,.webm,.avi,.mkv,.m4v';
-const MAX_SIZE_MB = 512;
+const MAX_SIZE_MB = 1024;
 
 export default function FileUpload({ onUploadComplete, onError }: FileUploadProps) {
   const [dragOver, setDragOver] = useState(false);
