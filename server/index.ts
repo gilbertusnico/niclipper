@@ -48,7 +48,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 512 * 1024 * 1024 }, // 512 MB
+  limits: { fileSize: 1024 * 1024 * 1024 }, // 1024 MB (1 GB)
   fileFilter: (_req, file, cb) => {
     const allowed = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v'];
     const ext = path.extname(file.originalname).toLowerCase();
@@ -81,7 +81,7 @@ app.post('/api/upload', (req, res) => {
   upload.single('video')(req, res, (err) => {
     if (err) {
       if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-        res.status(413).json({ error: 'File terlalu besar. Maksimal 512 MB.' });
+        res.status(413).json({ error: 'File terlalu besar. Maksimal 1024 MB (1 GB).' });
         return;
       }
       const message = err instanceof Error ? err.message : 'Upload failed';
