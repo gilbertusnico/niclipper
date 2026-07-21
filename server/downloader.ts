@@ -1,28 +1,23 @@
 import path from 'path';
 import fs from 'fs';
+import { execSync, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
-import { spawn, execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const downloadsDir = path.resolve(__dirname, '..', 'downloads');
 
-/** Cari executable yt-dlp yang tersedia — prefer binary over python module */
-function findYtDlp(): { cmd: string; args: string[] } {
-  // Coba binary yt-dlp dulu (lebih ringan, PyInstaller error Cryptodome non-fatal)
+/** Validate that an mp4 file is playable using ffprobe */
+function isValidMp4(filePath: string): boolean {
   try {
-    execSync('yt-dlp --version 2>/dev/null', { stdio: 'pipe', timeout: 5000 });
-    return { cmd: 'yt-dlp', args: [] };
+    execSync(`ffprobe -v quiet -print_format json -show_format "${filePath}"`, {
+      stdio: 'pipe',
+      timeout: 10000,
+    });
+    return true;
   } catch {
-    // Fallback ke python3 -m yt_dlp
-    try {
-      execSync('python3 -m yt_dlp --version 2>/dev/null', { stdio: 'pipe', timeout: 5000 });
-      return { cmd: 'python3', args: ['-m', 'yt_dlp'] };
-    } catch {
-      // Fallback terakhir — npx
-      return { cmd: 'npx', args: ['yt-dlp'] };
-    }
+    return false;
   }
 }
 
@@ -39,40 +34,33 @@ function extractVideoId(url: string): string | null {
   return null;
 }
 
-/** Validate that an mp4 file is playable using ffprobe */
-function isValidMp4(filePath: string): boolean {
-  try {
-    execSync(`ffprobe -v quiet -print_format json -show_format "${filePath}"`, {
-      stdio: 'pipe',
-      timeout: 5000,
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export function getVideoInfo(url: string): Promise<{ title: string; duration: number; videoId: string }> {
   const videoId = extractVideoId(url);
   if (!videoId) {
     return Promise.reject(new Error('Invalid YouTube URL. Periksa URL dan coba lagi.'));
   }
 
-  const { cmd, args } = findYtDlp();
-
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, [
-      ...args,
+    const proc = spawn('yt-dlp', [
       '--print', '%(title)s',
       '--print', '%(duration)s',
       '--no-warnings',
+      '--ignore-errors',
       url,
-    ]);
+    ], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 15000,
+    });
 
     let stdout = '';
+    let stderr = '';
 
     proc.stdout?.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
+    });
+
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
     });
 
     proc.on('error', (err) => {
@@ -81,7 +69,8 @@ export function getVideoInfo(url: string): Promise<{ title: string; duration: nu
 
     proc.on('close', (code) => {
       if (code !== 0) {
-        reject(new Error(`Gagal mendapatkan info video (exit code ${code})`));
+        const msg = stderr.trim().split('\n').filter(l => !l.startsWith('[debug]') && !l.startsWith('[info]')).pop() || stderr.trim();
+        reject(new Error(`Gagal mendapatkan info video: ${msg || `exit code ${code}`}`));
         return;
       }
       const lines = stdout.trim().split('\n');
@@ -127,28 +116,32 @@ export async function downloadVideo(
 
   console.log(`[Downloader] Starting download for video ${videoId}...`);
 
-  const { cmd, args } = findYtDlp();
-
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, [
-      ...args,
+    // Download best quality mp4 with both audio and video
+    // Use format 18 (360p mp4 with audio) as safe fallback, or let yt-dlp merge best formats
+    const proc = spawn('yt-dlp', [
       '-f', 'best[ext=mp4]/best',
       '-o', finalPath,
       '--no-warnings',
       '--newline',
-      '--progress-template', 'download:%(progress._percent_str)s',
       url,
-    ]);
+    ], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     let stderr = '';
 
+    // Parse progress from yt-dlp's default output format
+    // yt-dlp outputs lines like: "[download]  45.3% of 133.34MiB at 52.60MiB/s ETA 00:00"
     proc.stdout?.on('data', (chunk: Buffer) => {
-      const text = chunk.toString().trim();
-      // yt-dlp outputs progress lines like "download: 45.3%"
-      const match = text.match(/download:\s*([\d.]+)%/);
-      if (match && onProgress) {
-        const pct = Math.round(parseFloat(match[1]));
-        onProgress(Math.min(pct, 99));
+      const text = chunk.toString();
+      if (onProgress) {
+        // Match percentage from yt-dlp's default progress output
+        const match = text.match(/\[download\]\s+([\d.]+)%/);
+        if (match) {
+          const pct = Math.round(parseFloat(match[1]));
+          onProgress(Math.min(pct, 99));
+        }
       }
     });
 
@@ -167,15 +160,18 @@ export async function downloadVideo(
         return;
       }
 
-      // Verify the downloaded file is valid
-      if (!isValidMp4(finalPath)) {
-        reject(new Error('File hasil download corrupt, coba lagi.'));
-        return;
-      }
+      // Beri waktu tambahan untuk file selesai ditulis ke disk
+      setTimeout(() => {
+        // Verify the downloaded file is valid
+        if (!isValidMp4(finalPath)) {
+          reject(new Error('File hasil download corrupt, coba lagi.'));
+          return;
+        }
 
-      console.log(`[Downloader] Download complete: ${finalPath}`);
-      onProgress?.(100);
-      resolve(finalPath);
+        console.log(`[Downloader] Download complete: ${finalPath}`);
+        onProgress?.(100);
+        resolve(finalPath);
+      }, 500);
     });
   });
 }

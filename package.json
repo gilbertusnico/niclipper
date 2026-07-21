@@ -12,6 +12,7 @@
     "postinstall": "node scripts/install-fonts.js"
   },
   "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
     "@tailwindcss/vite": "^4.1.18",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
