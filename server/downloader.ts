@@ -120,7 +120,7 @@ export async function downloadVideo(
     // Download best quality mp4 with both audio and video
     // Use format 18 (360p mp4 with audio) as safe fallback, or let yt-dlp merge best formats
     const proc = spawn('yt-dlp', [
-      '-f', 'best[ext=mp4]/best',
+      '-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best',
       '-o', finalPath,
       '--no-warnings',
       '--newline',
