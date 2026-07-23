@@ -127,8 +127,9 @@ export async function downloadVideo(
     // Gunakan %(ext)s di output template agar yt-dlp handle extension sendiri
     const outputTemplate = path.join(downloadsDir, `${videoId}.%(ext)s`);
     const proc = spawn('yt-dlp', [
-      '-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best',
+      '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
       '-o', outputTemplate,
+      '--merge-output-format', 'mp4',
       '--extractor-args', 'youtube:player_client=android',
       '--no-warnings',
       '--newline',
