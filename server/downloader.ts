@@ -50,8 +50,8 @@ export function getVideoInfo(url: string): Promise<{ title: string; duration: nu
       '--print', '%(duration)s',
       '--no-warnings',
       '--ignore-errors',
-      '--extractor-args', 'youtube:skip=webpage',
-      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      '--extractor-args', 'youtube:player_client=android',
+      '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.159 Mobile Safari/537.36',
       url,
     ], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -131,8 +131,8 @@ export async function downloadVideo(
       '-o', outputTemplate,
       '--no-warnings',
       '--newline',
-      '--extractor-args', 'youtube:skip=webpage',
-      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      '--extractor-args', 'youtube:player_client=android',
+      '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.159 Mobile Safari/537.36',
       url,
     ], {
       stdio: ['ignore', 'pipe', 'pipe'],
