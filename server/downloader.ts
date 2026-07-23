@@ -2,18 +2,22 @@ import path from 'path';
 import fs from 'fs';
 import { execSync, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
+import { getFfmpegPath } from './ffmpeg.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const downloadsDir = path.resolve(__dirname, '..', 'downloads');
 
-/** Validate that an mp4 file is playable using ffprobe */
+/** Validate that an mp4 file is playable using ffmpeg (not ffprobe — may not be installed) */
 function isValidMp4(filePath: string): boolean {
   try {
-    execSync(`ffprobe -v quiet -print_format json -show_format "${filePath}"`, {
+    const ffmpegBin = getFfmpegPath();
+    // ffmpeg -i reads the file header and exits with code 1 (no output file specified)
+    // but if the file is truly invalid, it will error out with a codec error
+    execSync(`"${ffmpegBin}" -v error -i "${filePath}" -f null - 2>&1 || true`, {
       stdio: 'pipe',
-      timeout: 10000,
+      timeout: 15000,
     });
     return true;
   } catch {
