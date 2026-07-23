@@ -118,10 +118,11 @@ export async function downloadVideo(
 
   return new Promise((resolve, reject) => {
     // Download best quality mp4 with both audio and video
-    // Use format 18 (360p mp4 with audio) as safe fallback, or let yt-dlp merge best formats
+    // Gunakan %(ext)s di output template agar yt-dlp handle extension sendiri
+    const outputTemplate = path.join(downloadsDir, `${videoId}.%(ext)s`);
     const proc = spawn('yt-dlp', [
       '-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best',
-      '-o', finalPath,
+      '-o', outputTemplate,
       '--no-warnings',
       '--newline',
       url,
@@ -160,18 +161,57 @@ export async function downloadVideo(
         return;
       }
 
-      // Beri waktu tambahan untuk file selesai ditulis ke disk
-      setTimeout(() => {
-        // Verify the downloaded file is valid
-        if (!isValidMp4(finalPath)) {
-          reject(new Error('File hasil download corrupt, coba lagi.'));
-          return;
-        }
+      // Cari file dengan ekstensi apapun yang cocok dengan videoId
+      const findFile = (retries: number): void => {
+        try {
+          const files = fs.readdirSync(downloadsDir);
+          const videoFile = files.find(f => f.startsWith(videoId) && (f.endsWith('.mp4') || f.endsWith('.mkv') || f.endsWith('.webm')));
+          if (!videoFile) {
+            if (retries > 0) {
+              setTimeout(() => findFile(retries - 1), 1000);
+              return;
+            }
+            reject(new Error('File hasil download tidak ditemukan, coba lagi.'));
+            return;
+          }
 
-        console.log(`[Downloader] Download complete: ${finalPath}`);
-        onProgress?.(100);
-        resolve(finalPath);
-      }, 500);
+          const actualPath = path.join(downloadsDir, videoFile);
+
+          // Verify the downloaded file is valid
+          if (!isValidMp4(actualPath)) {
+            // Coba rename ke .mp4 jika belum
+            if (actualPath !== finalPath) {
+              try {
+                fs.renameSync(actualPath, finalPath);
+              } catch { /* ok */ }
+            }
+            if (!isValidMp4(finalPath)) {
+              reject(new Error('File hasil download corrupt, coba lagi.'));
+              return;
+            }
+          }
+
+          // Rename ke format baku .mp4 jika perlu
+          if (actualPath !== finalPath) {
+            try {
+              fs.renameSync(actualPath, finalPath);
+            } catch { /* ok */ }
+          }
+
+          console.log(`[Downloader] Download complete: ${finalPath}`);
+          onProgress?.(100);
+          resolve(finalPath);
+        } catch (err) {
+          if (retries > 0) {
+            setTimeout(() => findFile(retries - 1), 1000);
+          } else {
+            reject(new Error(`Gagal memverifikasi download: ${err instanceof Error ? err.message : 'unknown error'}`));
+          }
+        }
+      };
+
+      // Tunggu sebentar lalu cari file
+      setTimeout(() => findFile(5), 1000);
     });
   });
 }
