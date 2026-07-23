@@ -48,10 +48,10 @@ export function getVideoInfo(url: string): Promise<{ title: string; duration: nu
     const proc = spawn('yt-dlp', [
       '--print', '%(title)s',
       '--print', '%(duration)s',
+      '--extractor-args', 'youtube:player_client=android',
       '--no-warnings',
       '--ignore-errors',
-      '--extractor-args', 'youtube:player_client=android',
-      '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.159 Mobile Safari/537.36',
+      '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
       url,
     ], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -129,10 +129,11 @@ export async function downloadVideo(
     const proc = spawn('yt-dlp', [
       '-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best',
       '-o', outputTemplate,
+      '--extractor-args', 'youtube:player_client=android',
       '--no-warnings',
       '--newline',
-      '--extractor-args', 'youtube:player_client=android',
-      '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.159 Mobile Safari/537.36',
+      '--ignore-errors',
+      '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
       url,
     ], {
       stdio: ['ignore', 'pipe', 'pipe'],
