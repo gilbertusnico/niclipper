@@ -1,13 +1,28 @@
 /**
  * Raw FFmpeg utility — no dependency on fluent-ffmpeg (which needs ffprobe).
- * Uses spawn() directly with the ffmpeg binary from ffmpeg-static.
+ * Uses spawn() directly with the ffmpeg binary from ffmpeg-static or system.
  */
+
 import { spawn } from 'child_process';
 import ffmpegPath from 'ffmpeg-static';
 
-/** Get the path to the ffmpeg binary (from ffmpeg-static or default 'ffmpeg') */
-export function getFfmpegPath(): string {
-  return ffmpegPath || 'ffmpeg';
+let _ffmpegPath: string | null = null;
+
+/** Resolve ffmpeg binary path — tries ffmpeg-static first, then system ffmpeg */
+export function getFfmpegPath(): string | null {
+  if (_ffmpegPath !== null) return _ffmpegPath;
+
+  // Try 1: ffmpeg-static (npm package) — static import
+  if (ffmpegPath && typeof ffmpegPath === 'string' && ffmpegPath.length > 0) {
+    _ffmpegPath = ffmpegPath.replace(/\\/g, '/');
+    console.log(`[FFmpeg] Using ffmpeg-static: ${_ffmpegPath}`);
+    return _ffmpegPath;
+  }
+
+  // Try 2: System ffmpeg
+  _ffmpegPath = 'ffmpeg';
+  console.log(`[FFmpeg] ffmpeg-static not found, using system ffmpeg`);
+  return _ffmpegPath;
 }
 
 /**
@@ -33,6 +48,11 @@ export function runFfmpeg(
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const ffmpegBin = getFfmpegPath();
+    if (!ffmpegBin) {
+      reject(new Error('FFmpeg binary not found. Install ffmpeg or ffmpeg-static.'));
+      return;
+    }
+
     const proc = spawn(ffmpegBin, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });

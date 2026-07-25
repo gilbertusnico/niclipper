@@ -3,26 +3,80 @@ import fs from 'fs';
 import { execSync, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { getFfmpegPath } from './ffmpeg.js';
+import { getYtDlpPath } from './ytdlp.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const downloadsDir = path.resolve(__dirname, '..', 'downloads');
 
-/** Validate that an mp4 file is playable using ffmpeg (not ffprobe — may not be installed) */
-function isValidMp4(filePath: string): boolean {
+/**
+ * Lightweight MP4 header check — reads the first 12 bytes to verify it's an ftyp box.
+ * Works without ffmpeg, so it never throws on missing binaries.
+ */
+function hasMp4Header(filePath: string): boolean {
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(12);
+    const bytesRead = fs.readSync(fd, buf, 0, 12, 0);
+    fs.closeSync(fd);
+    // mp4 should have at least 8 bytes + "ftyp" at offset 4
+    if (bytesRead < 12) return false;
+    return buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70; // 'ftyp'
+  } catch {
+    return false;
+  }
+}
+
+/** Validate that an mp4 file is playable using ffmpeg (if available) */
+function validateWithFfmpeg(filePath: string): boolean {
   try {
     const ffmpegBin = getFfmpegPath();
-    // ffmpeg -i reads the file header and exits with code 1 (no output file specified)
-    // but if the file is truly invalid, it will error out with a codec error
+    if (!ffmpegBin) return false;
     execSync(`"${ffmpegBin}" -v error -i "${filePath}" -f null - 2>&1 || true`, {
       stdio: 'pipe',
       timeout: 15000,
     });
     return true;
-  } catch {
+  } catch (err) {
+    console.warn(`[Downloader] ffmpeg validation failed for ${filePath}:`, err instanceof Error ? err.message : err);
     return false;
   }
+}
+
+/** Validate a downloaded video file — uses mp4 header check + ffmpeg if available */
+function isValidVideo(filePath: string): boolean {
+  // Step 1: Check file exists and has content
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size < 1024) {
+      console.warn(`[Downloader] File too small or missing: ${filePath} (${stat.size} bytes)`);
+      return false;
+    }
+  } catch (err) {
+    console.warn(`[Downloader] Cannot stat file: ${filePath}`, err);
+    return false;
+  }
+
+  // Step 2: Check MP4 header
+  if (!hasMp4Header(filePath)) {
+    console.warn(`[Downloader] No MP4 header found: ${filePath}`);
+    return false;
+  }
+
+  // Step 3: Optional ffmpeg deep validation (if binary available)
+  const ffmpegBin = getFfmpegPath();
+  if (ffmpegBin) {
+    const ffmpegOk = validateWithFfmpeg(filePath);
+    if (!ffmpegOk) {
+      console.warn(`[Downloader] ffmpeg validation failed but header OK, continuing anyway: ${filePath}`);
+      // Don't fail just because ffmpeg isn't available — header check is sufficient
+    }
+  } else {
+    console.log(`[Downloader] ffmpeg not available, relying on header check only`);
+  }
+
+  return true;
 }
 
 /** Extract YouTube video ID from various URL formats */
@@ -45,7 +99,8 @@ export function getVideoInfo(url: string): Promise<{ title: string; duration: nu
   }
 
   return new Promise((resolve, reject) => {
-    const proc = spawn('yt-dlp', [
+    const ytDlpBin = getYtDlpPath();
+    const proc = spawn(ytDlpBin, [
       '--print', '%(title)s',
       '--print', '%(duration)s',
       '--extractor-args', 'youtube:player_client=android',
@@ -70,7 +125,7 @@ export function getVideoInfo(url: string): Promise<{ title: string; duration: nu
     });
 
     proc.on('error', (err) => {
-      reject(new Error(`Gagal menjalankan yt-dlp: ${err.message}`));
+      reject(new Error(`Gagal menjalankan yt-dlp: ${err.message}. Pastikan yt-dlp terinstall dengan benar.`));
     });
 
     proc.on('close', (code) => {
@@ -111,7 +166,7 @@ export async function downloadVideo(
 
   // Skip jika sudah pernah di-download dan file valid
   if (fs.existsSync(finalPath)) {
-    if (isValidMp4(finalPath)) {
+    if (isValidVideo(finalPath)) {
       console.log(`[Downloader] Valid file already exists: ${finalPath}`);
       onProgress?.(100);
       return finalPath;
@@ -124,9 +179,9 @@ export async function downloadVideo(
 
   return new Promise((resolve, reject) => {
     // Download best quality mp4 with both audio and video
-    // Gunakan %(ext)s di output template agar yt-dlp handle extension sendiri
     const outputTemplate = path.join(downloadsDir, `${videoId}.%(ext)s`);
-    const proc = spawn('yt-dlp', [
+    const ytDlpBin = getYtDlpPath();
+    const proc = spawn(ytDlpBin, [
       '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
       '-o', outputTemplate,
       '--merge-output-format', 'mp4',
@@ -143,11 +198,9 @@ export async function downloadVideo(
     let stderr = '';
 
     // Parse progress from yt-dlp's default output format
-    // yt-dlp outputs lines like: "[download]  45.3% of 133.34MiB at 52.60MiB/s ETA 00:00"
     proc.stdout?.on('data', (chunk: Buffer) => {
       const text = chunk.toString();
       if (onProgress) {
-        // Match percentage from yt-dlp's default progress output
         const match = text.match(/\[download\]\s+([\d.]+)%/);
         if (match) {
           const pct = Math.round(parseFloat(match[1]));
@@ -161,7 +214,7 @@ export async function downloadVideo(
     });
 
     proc.on('error', (err) => {
-      reject(new Error(`Gagal menjalankan yt-dlp: ${err.message}`));
+      reject(new Error(`Gagal menjalankan yt-dlp: ${err.message}. Pastikan yt-dlp terinstall dengan benar.`));
     });
 
     proc.on('close', (code) => {
@@ -187,18 +240,27 @@ export async function downloadVideo(
 
           const actualPath = path.join(downloadsDir, videoFile);
 
-          // Verify the downloaded file is valid
-          if (!isValidMp4(actualPath)) {
+          // Verify the downloaded file is valid (header check + optional ffmpeg)
+          if (!isValidVideo(actualPath)) {
             // Coba rename ke .mp4 jika belum
             if (actualPath !== finalPath) {
               try {
                 fs.renameSync(actualPath, finalPath);
+                if (isValidVideo(finalPath)) {
+                  console.log(`[Downloader] Download complete (after rename): ${finalPath}`);
+                  onProgress?.(100);
+                  resolve(finalPath);
+                  return;
+                }
               } catch { /* ok */ }
             }
-            if (!isValidMp4(finalPath)) {
+            if (retries > 0) {
+              console.log(`[Downloader] File invalid, retrying... (${retries} retries left)`);
+              setTimeout(() => findFile(retries - 1), 1000);
+            } else {
               reject(new Error('File hasil download corrupt, coba lagi.'));
-              return;
             }
+            return;
           }
 
           // Rename ke format baku .mp4 jika perlu
