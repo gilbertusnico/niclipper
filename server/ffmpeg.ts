@@ -1,28 +1,86 @@
 /**
  * Raw FFmpeg utility — no dependency on fluent-ffmpeg (which needs ffprobe).
- * Uses spawn() directly with the ffmpeg binary from ffmpeg-static or system.
+ * Uses spawn() directly with the ffmpeg binary.
+ *
+ * Priority: system FFmpeg (from PATH) → ffmpeg-static (npm fallback)
  */
 
-import { spawn } from 'child_process';
-import ffmpegPath from 'ffmpeg-static';
+import { spawn, execSync } from 'child_process';
+import fs from 'fs';
+import { createRequire } from 'module';
+
+const _require = createRequire(import.meta.url);
 
 let _ffmpegPath: string | null = null;
 
-/** Resolve ffmpeg binary path — tries ffmpeg-static first, then system ffmpeg */
+/** Resolve ffmpeg binary path — system FFmpeg first, then ffmpeg-static as fallback */
 export function getFfmpegPath(): string | null {
   if (_ffmpegPath !== null) return _ffmpegPath;
 
-  // Try 1: ffmpeg-static (npm package) — static import
-  if (ffmpegPath && typeof ffmpegPath === 'string' && ffmpegPath.length > 0) {
-    _ffmpegPath = ffmpegPath.replace(/\\/g, '/');
-    console.log(`[FFmpeg] Using ffmpeg-static: ${_ffmpegPath}`);
-    return _ffmpegPath;
+  // Try 1: System FFmpeg (dari PATH)
+  try {
+    const whichPath = execSync('which ffmpeg 2>/dev/null || where ffmpeg 2>nul', {
+      timeout: 3000,
+      encoding: 'utf-8',
+    }).trim();
+    if (whichPath) {
+      // Sanity check: run -version
+      execSync(`"${whichPath}" -version 2>&1`, { timeout: 5000, stdio: 'pipe' });
+      _ffmpegPath = whichPath;
+      console.log(`[FFmpeg] Using system FFmpeg: ${_ffmpegPath}`);
+      return _ffmpegPath;
+    }
+  } catch {
+    // Not in PATH, fall through
   }
 
-  // Try 2: System ffmpeg
-  _ffmpegPath = 'ffmpeg';
-  console.log(`[FFmpeg] ffmpeg-static not found, using system ffmpeg`);
+  // Try 2: Common install locations (Linux/macOS)
+  const commonPaths = [
+    '/usr/local/bin/ffmpeg',
+    '/usr/bin/ffmpeg',
+    '/opt/homebrew/bin/ffmpeg',
+  ];
+  for (const p of commonPaths) {
+    try {
+      fs.accessSync(p, fs.constants.X_OK);
+      execSync(`"${p}" -version 2>&1`, { timeout: 5000, stdio: 'pipe' });
+      _ffmpegPath = p;
+      console.log(`[FFmpeg] Using system FFmpeg: ${_ffmpegPath}`);
+      return _ffmpegPath;
+    } catch {
+      continue;
+    }
+  }
+
+  // Try 3: ffmpeg-static (npm fallback) — synchronous via createRequire
+  try {
+    const ffmpegStatic = _require('ffmpeg-static');
+    // ffmpeg-static exports the binary path as a string (default export)
+    const staticPath = typeof ffmpegStatic === 'string' ? ffmpegStatic : (ffmpegStatic.default || ffmpegStatic);
+    if (staticPath && typeof staticPath === 'string' && staticPath.length > 0) {
+      _ffmpegPath = staticPath.replace(/\\/g, '/');
+      console.log(`[FFmpeg] ffmpeg-static fallback: ${_ffmpegPath}`);
+      return _ffmpegPath;
+    }
+  } catch {
+    // ffmpeg-static not available
+  }
+
+  // Give up
+  console.warn('[FFmpeg] Binary not found via any method');
+  _ffmpegPath = 'ffmpeg'; // last resort — will likely fail with clear error
   return _ffmpegPath;
+}
+
+/**
+ * Check if FFmpeg is available.
+ */
+export function isFfmpegAvailable(): boolean {
+  try {
+    return getFfmpegPath() !== null;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -49,7 +107,7 @@ export function runFfmpeg(
   return new Promise((resolve, reject) => {
     const ffmpegBin = getFfmpegPath();
     if (!ffmpegBin) {
-      reject(new Error('FFmpeg binary not found. Install ffmpeg or ffmpeg-static.'));
+      reject(new Error('FFmpeg binary not found. Install ffmpeg via apt/brew/choco.'));
       return;
     }
 
@@ -110,7 +168,7 @@ export function runFfmpeg(
 
     proc.on('error', (err) => {
       if (timer) clearTimeout(timer);
-      reject(new Error(`FFmpeg not found: ${err.message}. Install ffmpeg or ffmpeg-static.`));
+      reject(new Error(`FFmpeg not found: ${err.message}. Install ffmpeg via apt/brew/choco.`));
     });
   });
 }

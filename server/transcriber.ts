@@ -14,10 +14,17 @@ export type TranscribeProgressCallback = (progress: number, detail?: string) => 
  * Transcribe audio from a video file using local Whisper (via @xenova/transformers).
  * Completely offline — no API keys, no rate limits, no cost.
  * The model is downloaded once on first use and cached.
+ *
+ * @param videoPath - Path to the video file
+ * @param onProgress - Progress callback
+ * @param startTime - Optional start time in seconds (only transcribe this segment)
+ * @param endTime - Optional end time in seconds (only transcribe this segment)
  */
 export async function transcribeAudio(
   videoPath: string,
   onProgress: TranscribeProgressCallback,
+  startTime?: number,
+  endTime?: number,
 ): Promise<string> {
   // Ensure temp directory exists
   if (!fs.existsSync(tempDir)) {
@@ -27,10 +34,13 @@ export async function transcribeAudio(
   const wavPath = path.join(tempDir, 'audio.wav');
 
   // Step 1: Extract audio to 16kHz mono WAV using FFmpeg (0-20% progress)
-  onProgress(5, 'Extracting audio from video...');
-  console.log(`[Transcriber] Extracting audio from ${videoPath}...`);
+  const rangeLabel = startTime !== undefined && endTime !== undefined
+    ? ` (${startTime}s → ${endTime}s, ${(endTime - startTime).toFixed(0)}s segment)`
+    : '';
+  onProgress(5, `Extracting audio from video${rangeLabel}...`);
+  console.log(`[Transcriber] Extracting audio from ${videoPath}${rangeLabel}...`);
 
-  await extractAudioToWav(videoPath, wavPath, (ffmpegProgress) => {
+  await extractAudioToWav(videoPath, wavPath, startTime, endTime, (ffmpegProgress) => {
     onProgress(Math.round(ffmpegProgress * 0.2), 'Extracting audio...');
   });
 
@@ -53,10 +63,14 @@ export async function transcribeAudio(
 
 /**
  * Extract audio to 16kHz mono WAV (the format Whisper expects) using raw FFmpeg.
+ * If startTime and endTime are provided, only that segment is extracted — much faster
+ * than extracting and transcribing the full video.
  */
 function extractAudioToWav(
   videoPath: string,
   outputPath: string,
+  startTime: number | undefined,
+  endTime: number | undefined,
   onProgress: (progress: number) => void,
 ): Promise<void> {
   // Remove existing temp file if it exists
@@ -68,15 +82,27 @@ function extractAudioToWav(
     // ignore
   }
 
-  const args = [
-    '-i', videoPath,
+  // Build ffmpeg args: when a time range is specified, seek first then cut
+  // Using -ss before -i for fast seeking, then -to to limit duration
+  const args: string[] = [];
+
+  if (startTime !== undefined && endTime !== undefined) {
+    const duration = endTime - startTime;
+    args.push('-ss', String(startTime));
+    args.push('-i', videoPath);
+    args.push('-to', String(duration)); // relative to seek point
+  } else {
+    args.push('-i', videoPath);
+  }
+
+  args.push(
     '-vn',
     '-acodec', 'pcm_s16le',
     '-ar', '16000',
     '-ac', '1',
     '-y',
     outputPath,
-  ];
+  );
 
   return runFfmpeg(args, { onProgress, timeout: 10 * 60 * 1000 });
 }

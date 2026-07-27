@@ -42,12 +42,20 @@ export async function runLocalFilePipeline(
     emitProgress('transcribing', 100);
   } else if (!resolvedTranscript) {
     // No transcript provided, auto-transcribe (for 'auto' or 'manual' modes)
+    // 🚀 OPTIMIZATION: Only transcribe the audio segment the user selected,
+    // not the entire video. This cuts transcription from 10+ minutes to ~3-5 seconds.
+    const transcribeStart = ranges.length > 0 ? Math.min(...ranges.map(r => r.start)) : undefined;
+    const transcribeEnd = ranges.length > 0 ? Math.max(...ranges.map(r => r.end)) : undefined;
+    const rangeLabel = transcribeStart !== undefined && transcribeEnd !== undefined
+      ? ` (${formatTime(transcribeStart)} — ${formatTime(transcribeEnd)}, ${(transcribeEnd - transcribeStart).toFixed(0)}s)`
+      : '';
+
     emitProgress('transcribing', 0);
-    console.log('[LocalFilePipeline] Auto-transcribing for subtitles...');
+    console.log(`[LocalFilePipeline] Auto-transcribing for subtitles${rangeLabel}...`);
     try {
       resolvedTranscript = await transcribeAudio(filePath, (progress, detail) => {
         emitProgress('transcribing', progress, detail ? { detail } : undefined);
-      });
+      }, transcribeStart, transcribeEnd);
       emitProgress('transcribing', 100);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Transcription failed';

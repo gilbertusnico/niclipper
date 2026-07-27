@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { downloadVideo } from './downloader.js';
-import { transcribeAudio } from './transcriber.js';
+import { getTranscriptForYouTube } from './subtitle-downloader.js';
 import { analyzeTranscript } from './analyzer.js';
 import { cropClips } from './cropper.js';
 import { renderFinalClips } from './renderer.js';
@@ -45,14 +45,19 @@ export async function runPipeline(
   }
 
   // ── Stage 2: Transcribe (always needed for analysis, even if subtitles='none') ──
+  // ⚡ Strategy: Try YouTube subtitles first (1-2 seconds), fall back to Whisper AI
   emitProgress('transcribing', 0);
-  console.log('[Pipeline] Stage 2: Transcribing audio...');
+  console.log('[Pipeline] Stage 2: Getting transcript (YouTube subs → Whisper fallback)...');
 
   let transcript: string;
   try {
-    transcript = await transcribeAudio(videoPath, (progress, detail) => {
+    const result = await getTranscriptForYouTube(url, videoPath, (progress, detail) => {
       emitProgress('transcribing', progress, detail ? { detail } : undefined);
     });
+    if (!result) {
+      throw new Error('All transcription methods failed');
+    }
+    transcript = result;
     console.log(`[Pipeline] Transcript length: ${transcript.length} chars`);
     emitProgress('transcribing', 100);
   } catch (err: unknown) {

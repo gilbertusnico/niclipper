@@ -9,7 +9,7 @@
  */
 
 import { downloadVideo } from './downloader.js';
-import { transcribeAudio } from './transcriber.js';
+import { getTranscriptForYouTube } from './subtitle-downloader.js';
 import { cropClips } from './cropper.js';
 import { renderFinalClips } from './renderer.js';
 import type { ClipResult, ViralMoment, ProgressCallback } from './types.js';
@@ -50,6 +50,7 @@ export async function runManualPipeline(
   }
 
   // ── Stage 2: Transcribe (optional — for subtitles) ────────────────
+  // ⚡ Strategy: Try YouTube subtitles first (1-2 seconds), fall back to Whisper AI
   let resolvedTranscript: string | undefined = transcript;
 
   if (subtitles === 'none') {
@@ -59,16 +60,26 @@ export async function runManualPipeline(
     emitProgress('transcribing', 100);
   } else if (!resolvedTranscript) {
     // No transcript provided, auto-transcribe (for 'auto' or 'manual' modes)
+    // 🚀 OPTIMIZATION 1: Try YouTube subtitles first (1-2 seconds)
+    // 🚀 OPTIMIZATION 2: If fallback to Whisper, only transcribe the segment the user selected
+    const transcribeStart = ranges.length > 0 ? Math.min(...ranges.map(r => r.start)) : undefined;
+    const transcribeEnd = ranges.length > 0 ? Math.max(...ranges.map(r => r.end)) : undefined;
+    const rangeLabel = transcribeStart !== undefined && transcribeEnd !== undefined
+      ? ` (${formatTime(transcribeStart)} — ${formatTime(transcribeEnd)}, ${(transcribeEnd - transcribeStart).toFixed(0)}s)`
+      : '';
+
     emitProgress('transcribing', 0);
-    console.log('[ManualPipeline] Stage 2: Auto-transcribing for subtitles...');
+    console.log(`[ManualPipeline] Stage 2: Getting transcript (YouTube subs → Whisper fallback)${rangeLabel}...`);
     try {
-      resolvedTranscript = await transcribeAudio(videoPath, (progress, detail) => {
+      const result = await getTranscriptForYouTube(url, videoPath, (progress, detail) => {
         emitProgress('transcribing', progress, detail ? { detail } : undefined);
-      });
+      }, transcribeStart, transcribeEnd);
+      resolvedTranscript = result ?? undefined;
       emitProgress('transcribing', 100);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Transcription failed';
-      console.warn(`[ManualPipeline] Transcription failed, proceeding without subtitles: ${msg}`);
+      console.warn(`[ManualPipeline] All transcription methods failed, proceeding without subtitles: ${msg}`);
+      resolvedTranscript = undefined;
       emitProgress('transcribing', 100); // move past it
     }
   }

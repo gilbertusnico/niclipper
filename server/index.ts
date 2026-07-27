@@ -8,6 +8,7 @@ import { exec } from 'child_process';
 import dotenv from 'dotenv';
 import * as archiver from 'archiver';
 import multer from 'multer';
+import { getFfmpegPath } from './ffmpeg.js';
 import { runPipeline } from './pipeline.js';
 import { runManualPipeline } from './manual-pipeline.js';
 import type { TimeRange } from './manual-pipeline.js';
@@ -564,6 +565,14 @@ app.get('/api/download-code', (req, res) => {
 });
 
 app.listen(PORT, () => {
+  // Log FFmpeg detection
+  const ffmpegPath = getFfmpegPath();
+  if (ffmpegPath) {
+    console.log(`  🎬  FFmpeg: ${ffmpegPath}`);
+  } else {
+    console.warn(`  ⚠️   FFmpeg not found — install via apt/brew/choco`);
+  }
+
   console.log(`\n  🚀  Niclipper server running on http://localhost:${PORT}`);
   console.log(`  📁  Output directory: ${outputDir}`);
   console.log(`  📋  Health check: http://localhost:${PORT}/api/health\n`);
