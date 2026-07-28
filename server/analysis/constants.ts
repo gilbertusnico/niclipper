@@ -10,10 +10,10 @@ export const MIN_BLOCK_DURATION = 8;         // seconds — smallest idea block
 export const MAX_BLOCK_DURATION = 60;        // seconds — split if longer
 
 // ─── Candidate Generation ────────────────────────────────────────────────
-export const MIN_CLIP_DURATION = 15;         // seconds
-export const MAX_CLIP_DURATION = 30;         // seconds
-export const IDEAL_CLIP_DURATION_MIN = 15;
-export const IDEAL_CLIP_DURATION_MAX = 30;
+export const MIN_CLIP_DURATION = 30;         // seconds
+export const MAX_CLIP_DURATION = 60;         // seconds
+export const IDEAL_CLIP_DURATION_MIN = 30;
+export const IDEAL_CLIP_DURATION_MAX = 60;
 export const MAX_CANDIDATES = 20;            // max candidates before filtering
 
 // ─── Retention Prediction ────────────────────────────────────────────────
@@ -113,7 +113,7 @@ export const RANKING_RETENTION_WEIGHT = 0.55;
 export const RANKING_QUALITY_WEIGHT = 0.20;
 export const RANKING_DIVERSITY_WEIGHT = 0.10;
 export const RANKING_DURATION_WEIGHT = 0.15;
-export const RANKING_IDEAL_DURATION = 22;    // seconds — preferred clip length
+export const RANKING_IDEAL_DURATION = 45;    // seconds — preferred clip length
 
 // ─── Content Classifier ──────────────────────────────────────────────────
 export const CONTENT_TYPE_SIGNALS: Record<string, {

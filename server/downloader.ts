@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs';
-import { execSync, spawn } from 'child_process';
+import { spawnSync, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { getFfmpegPath } from './ffmpeg.js';
 import { getYtDlpPath } from './ytdlp.js';
@@ -30,18 +30,16 @@ function hasMp4Header(filePath: string): boolean {
 
 /** Validate that an mp4 file is playable using ffmpeg (if available) */
 function validateWithFfmpeg(filePath: string): boolean {
-  try {
-    const ffmpegBin = getFfmpegPath();
-    if (!ffmpegBin) return false;
-    execSync(`"${ffmpegBin}" -v error -i "${filePath}" -f null - 2>&1 || true`, {
-      stdio: 'pipe',
-      timeout: 15000,
-    });
-    return true;
-  } catch (err) {
-    console.warn(`[Downloader] ffmpeg validation failed for ${filePath}:`, err instanceof Error ? err.message : err);
-    return false;
-  }
+  const ffmpegBin = getFfmpegPath();
+  if (!ffmpegBin) return false;
+
+  // Quick probe with -t 1 — only decodes 1 second, very fast
+  const result = spawnSync(ffmpegBin, ['-v', 'error', '-i', filePath, '-f', 'null', '-t', '1', '-'], {
+    stdio: 'pipe',
+    timeout: 30_000,
+  });
+
+  return result.status === 0;
 }
 
 /** Validate a downloaded video file — uses mp4 header check + ffmpeg if available */
@@ -103,10 +101,11 @@ export function getVideoInfo(url: string): Promise<{ title: string; duration: nu
     const proc = spawn(ytDlpBin, [
       '--print', '%(title)s',
       '--print', '%(duration)s',
-      '--extractor-args', 'youtube:player_client=android',
+      '--ffmpeg-location', '/usr/local/bin/ffmpeg',
+      '--extractor-args', 'youtube:player_client=android_music,web',
       '--no-warnings',
       '--ignore-errors',
-      '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       url,
     ], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -182,14 +181,15 @@ export async function downloadVideo(
     const outputTemplate = path.join(downloadsDir, `${videoId}.%(ext)s`);
     const ytDlpBin = getYtDlpPath();
     const proc = spawn(ytDlpBin, [
-      '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+      '-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]',
       '-o', outputTemplate,
       '--merge-output-format', 'mp4',
-      '--extractor-args', 'youtube:player_client=android',
+      '--ffmpeg-location', '/usr/local/bin/ffmpeg',
+      '--extractor-args', 'youtube:player_client=android_music,web',
       '--no-warnings',
       '--newline',
       '--ignore-errors',
-      '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       url,
     ], {
       stdio: ['ignore', 'pipe', 'pipe'],

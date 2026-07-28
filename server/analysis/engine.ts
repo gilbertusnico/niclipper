@@ -139,9 +139,9 @@ export async function analyzeTranscript(
         // Prefer more complete narrative arcs
         const arcDiff = b.blocks.length - a.blocks.length;
         if (Math.abs(arcDiff) >= 2) return arcDiff;
-        // Then prefer clips closer to 50 seconds
-        const aDur = Math.abs((a.endTime - a.startTime) - 50);
-        const bDur = Math.abs((b.endTime - b.startTime) - 50);
+        // Then prefer clips closer to 45 seconds
+        const aDur = Math.abs((a.endTime - a.startTime) - 45);
+        const bDur = Math.abs((b.endTime - b.startTime) - 45);
         return aDur - bDur;
       })
       .slice(0, MAX_CANDIDATES);
