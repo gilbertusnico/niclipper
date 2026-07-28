@@ -103,7 +103,7 @@ export function getVideoInfo(url: string): Promise<{ title: string; duration: nu
       '--print', '%(title)s',
       '--print', '%(duration)s',
       '--ffmpeg-location', ffmpegBin,
-      '--extractor-args', 'youtube:player_client=android_music,web',
+      '--extractor-args', 'youtube:player_client=android_music,web;skip=webpage',
       '--no-warnings',
       '--ignore-errors',
       '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -183,11 +183,11 @@ export async function downloadVideo(
     const ytDlpBin = getYtDlpPath();
     const ffmpegBin = getFfmpegPath() || '/usr/local/bin/ffmpeg';
     const proc = spawn(ytDlpBin, [
-      '-f', 'bv*[height<=1080]+ba',
+      '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best',
       '-o', outputTemplate,
       '--merge-output-format', 'mp4',
       '--ffmpeg-location', ffmpegBin,
-      '--extractor-args', 'youtube:player_client=android_music,web',
+      '--extractor-args', 'youtube:player_client=android_music,web;skip=webpage',
       '--retries', '10',
       '--extractor-retries', '10',
       '--no-warnings',
