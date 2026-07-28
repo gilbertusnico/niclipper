@@ -98,10 +98,11 @@ export function getVideoInfo(url: string): Promise<{ title: string; duration: nu
 
   return new Promise((resolve, reject) => {
     const ytDlpBin = getYtDlpPath();
+    const ffmpegBin = getFfmpegPath() || '/usr/local/bin/ffmpeg';
     const proc = spawn(ytDlpBin, [
       '--print', '%(title)s',
       '--print', '%(duration)s',
-      '--ffmpeg-location', '/usr/local/bin/ffmpeg',
+      '--ffmpeg-location', ffmpegBin,
       '--extractor-args', 'youtube:player_client=android_music,web',
       '--no-warnings',
       '--ignore-errors',
@@ -180,12 +181,15 @@ export async function downloadVideo(
     // Download best quality mp4 with both audio and video
     const outputTemplate = path.join(downloadsDir, `${videoId}.%(ext)s`);
     const ytDlpBin = getYtDlpPath();
+    const ffmpegBin = getFfmpegPath() || '/usr/local/bin/ffmpeg';
     const proc = spawn(ytDlpBin, [
-      '-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+      '-f', 'bv*[height<=1080]+ba',
       '-o', outputTemplate,
       '--merge-output-format', 'mp4',
-      '--ffmpeg-location', '/usr/local/bin/ffmpeg',
+      '--ffmpeg-location', ffmpegBin,
       '--extractor-args', 'youtube:player_client=android_music,web',
+      '--retries', '10',
+      '--extractor-retries', '10',
       '--no-warnings',
       '--newline',
       '--ignore-errors',
