@@ -183,7 +183,8 @@ export async function downloadVideo(
     const ytDlpBin = getYtDlpPath();
     const ffmpegBin = getFfmpegPath() || '/usr/local/bin/ffmpeg';
     const proc = spawn(ytDlpBin, [
-      '-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best',
+      '-f', 'bv*+ba/b',
+      '--format-sort', 'res:1080,vcodec:h264,ext:mp4:m4a',
       '-o', outputTemplate,
       '--merge-output-format', 'mp4',
       '--ffmpeg-location', ffmpegBin,
