@@ -84,6 +84,25 @@ export function isFfmpegAvailable(): boolean {
 }
 
 /**
+ * Check whether the current FFmpeg build exposes a specific filter.
+ * Some minimal macOS installs omit subtitle/drawtext filters entirely.
+ */
+export function hasFfmpegFilter(filterName: string): boolean {
+  try {
+    const ffmpegBin = getFfmpegPath();
+    if (!ffmpegBin) return false;
+    const output = execSync(`"${ffmpegBin}" -hide_banner -filters 2>&1`, {
+      encoding: 'utf8',
+      timeout: 15000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    return output.toLowerCase().includes(filterName.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Run FFmpeg with the given arguments and track progress.
  *
  * Progress is calculated by parsing the `time=HH:MM:SS.MS` lines ffmpeg

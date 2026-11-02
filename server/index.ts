@@ -21,6 +21,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
+const MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB
 
 // Paths
 const outputDir = path.resolve(__dirname, '..', 'output');
@@ -49,7 +50,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 1024 * 1024 * 1024 }, // 1024 MB (1 GB)
+  limits: { fileSize: MAX_UPLOAD_SIZE_BYTES },
   fileFilter: (_req, file, cb) => {
     const allowed = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v'];
     const ext = path.extname(file.originalname).toLowerCase();
@@ -82,7 +83,7 @@ app.post('/api/upload', (req, res) => {
   upload.single('video')(req, res, (err) => {
     if (err) {
       if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-        res.status(413).json({ error: 'File terlalu besar. Maksimal 1024 MB (1 GB).' });
+        res.status(413).json({ error: `File terlalu besar. Maksimal ${MAX_UPLOAD_SIZE_BYTES / (1024 * 1024 * 1024)} GB.` });
         return;
       }
       const message = err instanceof Error ? err.message : 'Upload failed';

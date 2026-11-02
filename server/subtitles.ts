@@ -29,52 +29,72 @@ export interface SubtitleSegment {
  */
 export function parseTranscriptToSegments(transcript: string): SubtitleSegment[] {
   const segments: SubtitleSegment[] = [];
-  const lines = transcript.split('\n');
+  const lines = transcript.split(/\r?\n/);
 
   let currentStart: number | null = null;
   let currentEnd: number | null = null;
   let currentTextLines: string[] = [];
 
+  const flushCurrentSegment = () => {
+    if (currentStart === null || currentTextLines.length === 0) return;
+
+    const text = currentTextLines.join(' ').replace(/\s+/g, ' ').trim();
+    if (!text) return;
+
+    segments.push({
+      start: currentStart,
+      end: currentEnd ?? currentStart + 2,
+      text,
+    });
+  };
+
   for (const rawLine of lines) {
     const line = rawLine.trim();
+    if (!line) continue;
 
-    // Check for timestamp marker
-    const tsMatch = line.match(/\[TIMESTAMP:\s*([\d.]+)\s*->\s*([\d.]+)\s*\]/);
-    if (tsMatch) {
-      // If we were building a previous segment, push it
-      if (currentStart !== null && currentTextLines.length > 0) {
-        segments.push({
-          start: currentStart,
-          end: currentEnd ?? currentStart,
-          text: currentTextLines.join(' ').replace(/\s+/g, ' ').trim(),
-        });
-      }
-
-      currentStart = parseFloat(tsMatch[1]);
-      currentEnd = parseFloat(tsMatch[2]);
+    const bracketMatch = line.match(/\[TIMESTAMP:\s*([\d.]+)\s*->\s*([\d.]+)\s*\]/i);
+    if (bracketMatch) {
+      flushCurrentSegment();
+      currentStart = parseFloat(bracketMatch[1]);
+      currentEnd = parseFloat(bracketMatch[2]);
       currentTextLines = [];
       continue;
     }
 
-    // Skip empty lines and non-text lines
-    if (line === '' || line.startsWith('[')) continue;
+    const timeTextMatch = line.match(/^((?:\d{1,2}:)?\d{1,2}:\d{2})\s+(.*)$/);
+    if (timeTextMatch) {
+      const nextStart = parseClockToSeconds(timeTextMatch[1]);
+      const text = timeTextMatch[2].trim();
 
-    // Accumulate text
+      if (currentStart !== null && currentTextLines.length > 0) {
+        currentEnd = nextStart;
+        flushCurrentSegment();
+      }
+
+      currentStart = nextStart;
+      currentEnd = nextStart + 3;
+      currentTextLines = text ? [text] : [];
+      continue;
+    }
+
     if (currentStart !== null) {
       currentTextLines.push(line);
     }
   }
 
-  // Don't forget the last segment
-  if (currentStart !== null && currentTextLines.length > 0) {
-    segments.push({
-      start: currentStart,
-      end: currentEnd ?? currentStart,
-      text: currentTextLines.join(' ').replace(/\s+/g, ' ').trim(),
-    });
-  }
-
+  flushCurrentSegment();
   return segments;
+}
+
+function parseClockToSeconds(value: string): number {
+  const parts = value.split(':').map(Number);
+  if (parts.length === 2) {
+    return parts[0] * 60 + parts[1];
+  }
+  if (parts.length === 3) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  return 0;
 }
 
 /**

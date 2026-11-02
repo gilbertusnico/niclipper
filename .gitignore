@@ -33,3 +33,6 @@ dist-ssr
 /output/
 /temp/
 /subtitles/
+
+# User-uploaded videos
+/uploads/

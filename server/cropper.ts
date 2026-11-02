@@ -3,13 +3,15 @@ import fs from 'fs';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import type { ViralMoment } from './types.js';
-import { runFfmpeg, getFfmpegPath } from './ffmpeg.js';
-import { parseTranscriptToSegments, filterSegmentsForClip, writeAssFile } from './subtitles.js';
+import { runFfmpeg, getFfmpegPath, hasFfmpegFilter } from './ffmpeg.js';
+import { parseTranscriptToSegments, filterSegmentsForClip } from './subtitles.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const tempDir = path.resolve(__dirname, '..', 'temp');
+const projectRoot = path.resolve(__dirname, '..');
+const tempDir = path.resolve(projectRoot, 'temp');
+const subtitleFontPath = path.join(projectRoot, 'Fontspring-DEMO-integralcf-demibold.otf');
 
 export type CropProgressCallback = (progress: number) => void;
 
@@ -77,18 +79,43 @@ export async function cropClips(
   const duration = moment.endTime - moment.startTime;
 
   // ── Subtitle generation (burned into video) ───────────────────
-  // Generate an ASS subtitle file from the transcript and burn it
-  // into the video using FFmpeg's ass filter (TikTok-style).
-  let assPath: string | null = null;
+  // Prefer drawtext over ASS because some FFmpeg builds support drawtext
+  // reliably but reject ASS subtitle filter parsing.
+  let subtitleOverlay: string | null = null;
 
   if (transcript && transcript.trim().length > 0) {
     try {
       const allSegments = parseTranscriptToSegments(transcript);
-      const clipSegments = filterSegmentsForClip(allSegments, moment.startTime, moment.endTime);
+      let clipSegments = filterSegmentsForClip(allSegments, moment.startTime, moment.endTime);
+
+      if (clipSegments.length === 0) {
+        const fallbackText = transcript
+          .replace(/\[TIMESTAMP:[\s\S]*?\]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (fallbackText) {
+          clipSegments = [{
+            start: 0,
+            end: Math.max(duration, 1),
+            text: fallbackText.slice(0, 200),
+          }];
+          console.warn(`[Cropper] No timestamped subtitle segments matched clip ${clipIndex}; using text fallback for subtitle overlay.`);
+        }
+      }
+
       if (clipSegments.length > 0) {
-        assPath = path.join(tempDir, `clip_${clipIndex}.ass`);
-        writeAssFile(clipSegments, assPath, 1080, 1920);
-        console.log(`[Cropper] Generated ASS subtitle: ${assPath} (${clipSegments.length} segments)`);
+        const subtitleText = clipSegments
+          .map((seg) => seg.text)
+          .filter(Boolean)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (subtitleText) {
+          subtitleOverlay = buildTimedDrawTextFilter(clipSegments, 1080, 1920);
+          console.log(`[Cropper] Prepared ${clipSegments.length} timed drawtext subtitle segments for clip ${clipIndex}.`);
+        }
       }
     } catch (err) {
       console.warn(`[Cropper] Failed to generate subtitles for clip ${clipIndex}:`, err instanceof Error ? err.message : err);
@@ -105,11 +132,21 @@ export async function cropClips(
     `crop=1080:1920`,
   ];
 
-  // Add ASS subtitle burn-in after the video is at 1080x1920
-  if (assPath) {
-    // Escape backslashes for the filter string
-    const escapedAssPath = assPath.replace(/\\/g, '\\\\').replace(/:/g, '\\:');
-    vfParts.push(`ass=${escapedAssPath}`);
+  // Some FFmpeg builds are missing subtitle/drawtext support entirely.
+  // Add text overlay after the video is at 1080x1920.
+  // We prefer drawtext because it works on the current FFmpeg build and is
+  // more robust than ASS parsing in this environment.
+  if (subtitleOverlay) {
+    const subtitleFilterSupported = hasFfmpegFilter('drawtext');
+    if (!subtitleFilterSupported) {
+      console.warn('[Cropper] FFmpeg drawtext filter is unavailable in this build. Skipping subtitle burn-in for clip.', {
+        clipIndex,
+        ffmpegPath: getFfmpegPath(),
+      });
+      subtitleOverlay = null;
+    } else {
+      vfParts.push(subtitleOverlay);
+    }
   }
 
   const vf = vfParts.join(',');
@@ -136,6 +173,85 @@ export async function cropClips(
   });
 
   return outputPath;
+}
+
+function buildTimedDrawTextFilter(segments: Array<{ start: number; end: number; text: string }>, width: number, height: number): string {
+  const fontFile = fs.existsSync(subtitleFontPath)
+    ? subtitleFontPath
+    : '/System/Library/Fonts/Supplemental/Arial.ttf';
+
+  const x = '(w-text_w)/2';
+  const y = `h-text_h-${Math.round(height * 0.09)}`;
+  const lineSpacing = 18;
+  const fontSize = width >= 1080 ? 96 : 72;
+
+  return segments
+    .map((segment) => {
+      const normalized = segment.text
+        .replace(/\n/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 220);
+
+      const safeText = buildSubtitleLines(normalized)
+        .map((line) => line.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/:/g, '\\:'))
+        .join('\\n');
+
+      return `drawtext=text='${safeText}':fontfile='${fontFile}':fontcolor=white:fontsize=${fontSize}:bordercolor=black:borderw=10:line_spacing=${lineSpacing}:x=${x}:y=${y}:shadowcolor=black@0.7:shadowx=1:shadowy=1:enable='between(t,${segment.start},${segment.end})'`;
+    })
+    .join(',');
+}
+
+function buildDrawTextFilter(text: string, width: number, height: number): string {
+  const normalized = text
+    .replace(/\\n/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 220);
+
+  const safeText = buildSubtitleLines(normalized)
+    .map((line) => line.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/:/g, '\\:'))
+    .join('\\n');
+
+  const fontFile = fs.existsSync(subtitleFontPath)
+    ? subtitleFontPath
+    : '/System/Library/Fonts/Supplemental/Arial.ttf';
+
+  const x = '(w-text_w)/2';
+  const y = `h-text_h-${Math.round(height * 0.09)}`;
+  const lineSpacing = 18;
+  const fontSize = width >= 1080 ? 96 : 72;
+
+  return `drawtext=text='${safeText}':fontfile='${fontFile}':fontcolor=white:bordercolor=black:borderw=10:line_spacing=${lineSpacing}:x=${x}:y=${y}:shadowcolor=black@0.7:shadowx=1:shadowy=1`;
+}
+
+function buildSubtitleLines(text: string): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return [''];
+  }
+
+  const maxCharsPerLine = 28;
+  const lines: string[] = [];
+  let currentLine = '';
+
+  for (const word of words) {
+    const candidate = currentLine ? `${currentLine} ${word}` : word;
+
+    if (candidate.length > maxCharsPerLine && currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+      continue;
+    }
+
+    currentLine = candidate;
+  }
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines.slice(0, 3);
 }
 
 /**

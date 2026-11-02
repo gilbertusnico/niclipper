@@ -7,7 +7,7 @@ interface FileUploadProps {
 }
 
 const ACCEPTED_TYPES = '.mp4,.mov,.webm,.avi,.mkv,.m4v';
-const MAX_SIZE_MB = 1024;
+const MAX_SIZE_MB = 2048;
 
 export default function FileUpload({ onUploadComplete, onError }: FileUploadProps) {
   const [dragOver, setDragOver] = useState(false);
@@ -32,7 +32,7 @@ export default function FileUpload({ onUploadComplete, onError }: FileUploadProp
     }
 
     if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-      setError(`File terlalu besar. Maksimal ${MAX_SIZE_MB} MB.`);
+      setError(`File terlalu besar. Maksimal ${MAX_SIZE_MB} MB (2 GB).`);
       return;
     }
 
@@ -232,7 +232,7 @@ export default function FileUpload({ onUploadComplete, onError }: FileUploadProp
                 MP4, MOV, WebM
               </span>
               <span className="w-px h-3 bg-border" aria-hidden="true" />
-              <span>Maks {MAX_SIZE_MB} MB</span>
+              <span>Maks {MAX_SIZE_MB} MB (2 GB)</span>
             </div>
           </div>
         )}

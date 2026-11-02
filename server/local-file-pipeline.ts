@@ -59,8 +59,8 @@ export async function runLocalFilePipeline(
       emitProgress('transcribing', 100);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Transcription failed';
-      console.warn(`[LocalFilePipeline] Transcription failed, proceeding without subtitles: ${msg}`);
-      emitProgress('transcribing', 100); // move past it
+      console.warn(`[LocalFilePipeline] AI subtitle generation failed, continuing without subtitles: ${msg}`);
+      emitProgress('transcribing', 100, { detail: 'AI subtitle generation failed; continuing without subtitles.' });
     }
   }
 
