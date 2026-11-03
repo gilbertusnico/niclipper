@@ -7,6 +7,7 @@
  */
 
 import fs from 'fs';
+import { SUBTITLE_STYLE, wrapSubtitleLines } from './subtitle-style.js';
 
 export interface SubtitleSegment {
   start: number; // seconds
@@ -83,7 +84,140 @@ export function parseTranscriptToSegments(transcript: string): SubtitleSegment[]
   }
 
   flushCurrentSegment();
-  return segments;
+  return normalizeSegments(segments);
+}
+
+// ─── Segment normalization ──────────────────────────────────────────
+// Raw transcripts often contain cues that overlap in time:
+//  - YouTube auto-captions are "rolling": every cue repeats the previous
+//    line and starts before the previous cue ends.
+//  - Whisper chunks can overlap slightly or have a missing end time.
+// Because every segment is drawn at the same screen position, any overlap
+// shows up as stacked / tumpang tindih text. normalizeSegments makes the
+// list strictly sequential, de-duplicated, and short enough per card.
+
+/** Segments shorter than this are merged into the next one. */
+const MIN_SEGMENT_DURATION = 0.2;
+
+function normalizeWord(word: string): string {
+  return word.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/**
+ * Number of words at the end of `prev` that are repeated at the start of `cur`.
+ * Only counts as a repeat when ≥2 words match, or the whole previous text repeats
+ * (avoids stripping coincidental single words like "the"/"yang").
+ */
+function repeatedPrefixLength(prev: string[], cur: string[]): number {
+  const p = prev.map(normalizeWord);
+  const c = cur.map(normalizeWord);
+  const max = Math.min(p.length, c.length);
+  for (let k = max; k >= 1; k--) {
+    let match = true;
+    for (let i = 0; i < k; i++) {
+      if (p[p.length - k + i] !== c[i]) { match = false; break; }
+    }
+    if (match && (k >= 2 || k === p.length)) return k;
+  }
+  return 0;
+}
+
+/** Split text into cards that each fit in SUBTITLE_STYLE.maxLines lines. */
+function splitIntoCards(text: string): string[] {
+  const lines = wrapSubtitleLines(text);
+  const cards: string[] = [];
+  for (let i = 0; i < lines.length; i += SUBTITLE_STYLE.maxLines) {
+    cards.push(lines.slice(i, i + SUBTITLE_STYLE.maxLines).join(' '));
+  }
+  // Avoid a lonely 1–2 word card at the end: pull it into the previous card
+  // when the combined text still fits.
+  if (cards.length >= 2) {
+    const merged = `${cards[cards.length - 2]} ${cards[cards.length - 1]}`;
+    if (wrapSubtitleLines(merged).length <= SUBTITLE_STYLE.maxLines) {
+      cards.splice(cards.length - 2, 2, merged);
+    }
+  }
+  return cards;
+}
+
+export function normalizeSegments(input: SubtitleSegment[]): SubtitleSegment[] {
+  // 1. Clean + fix missing/invalid end times, then sort by start.
+  const sorted = input
+    .filter((s) => Number.isFinite(s.start) && s.text.trim().length > 0)
+    .map((s) => {
+      const text = s.text.replace(/\s+/g, ' ').trim();
+      let end = Number.isFinite(s.end) ? s.end : s.start;
+      if (end <= s.start) {
+        // Estimate ~0.4s per word, at least 1s
+        end = s.start + Math.max(1, text.split(' ').length * 0.4);
+      }
+      return { start: s.start, end, text };
+    })
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  // 2. Strip text repeated from the previous cue (rolling captions).
+  const deduped: SubtitleSegment[] = [];
+  for (const seg of sorted) {
+    const prev = deduped[deduped.length - 1];
+    if (!prev) { deduped.push(seg); continue; }
+
+    const prevWords = prev.text.split(' ');
+    const curWords = seg.text.split(' ');
+    const k = repeatedPrefixLength(prevWords, curWords);
+    const remaining = curWords.slice(k).join(' ').trim();
+
+    if (!remaining) {
+      // Pure repeat of the previous cue → just extend its display time.
+      prev.end = Math.max(prev.end, seg.end);
+      continue;
+    }
+    // New words start no earlier than the previous cue's start.
+    deduped.push({ start: Math.max(seg.start, prev.start), end: seg.end, text: remaining });
+  }
+
+  // 3. Remove time overlap: each segment ends when the next one starts.
+  for (let i = 0; i < deduped.length - 1; i++) {
+    if (deduped[i].end > deduped[i + 1].start) {
+      deduped[i].end = deduped[i + 1].start;
+    }
+  }
+
+  // 4. Merge segments that became too short to read into the next one.
+  const merged: SubtitleSegment[] = [];
+  for (let i = 0; i < deduped.length; i++) {
+    const seg = deduped[i];
+    const next = deduped[i + 1];
+    if (next && seg.end - seg.start < MIN_SEGMENT_DURATION) {
+      next.text = `${seg.text} ${next.text}`;
+      next.start = seg.start;
+      continue;
+    }
+    merged.push(seg);
+  }
+
+  // 5. Split long segments into ≤2-line cards, timing proportional to length.
+  const result: SubtitleSegment[] = [];
+  for (const seg of merged) {
+    const cards = splitIntoCards(seg.text);
+    if (cards.length <= 1) { result.push(seg); continue; }
+
+    const totalChars = cards.reduce((sum, c) => sum + c.length, 0);
+    const duration = seg.end - seg.start;
+    let t = seg.start;
+    cards.forEach((card, idx) => {
+      const end = idx === cards.length - 1
+        ? seg.end
+        : t + duration * (card.length / totalChars);
+      result.push({
+        start: Math.round(t * 1000) / 1000,
+        end: Math.round(end * 1000) / 1000,
+        text: card,
+      });
+      t = end;
+    });
+  }
+
+  return result;
 }
 
 function parseClockToSeconds(value: string): number {
