@@ -93,22 +93,12 @@ export async function cropClips(
   if (transcript && transcript.trim().length > 0) {
     try {
       const allSegments = parseTranscriptToSegments(transcript);
-      let clipSegments = filterSegmentsForClip(allSegments, moment.startTime, moment.endTime);
+      const clipSegments = filterSegmentsForClip(allSegments, moment.startTime, moment.endTime);
 
+      // No fallback: one frozen card of unrelated text for the whole clip is worse
+      // than no subtitles, and it hides timestamp bugs.
       if (clipSegments.length === 0) {
-        const fallbackText = transcript
-          .replace(/\[TIMESTAMP:[\s\S]*?\]/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-
-        if (fallbackText) {
-          clipSegments = [{
-            start: 0,
-            end: Math.max(duration, 1),
-            text: fallbackText.slice(0, 200),
-          }];
-          console.warn(`[Cropper] No timestamped subtitle segments matched clip ${clipIndex}; using text fallback for subtitle overlay.`);
-        }
+        console.warn(`[Cropper] No timestamped subtitle segments matched clip ${clipIndex} (${moment.startTime}s–${moment.endTime}s); skipping subtitles.`);
       }
 
       if (clipSegments.length > 0) {
