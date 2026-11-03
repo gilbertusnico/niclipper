@@ -5,13 +5,19 @@ import { fileURLToPath } from 'url';
 import type { ViralMoment } from './types.js';
 import { runFfmpeg, getFfmpegPath, hasFfmpegFilter } from './ffmpeg.js';
 import { parseTranscriptToSegments, filterSegmentsForClip } from './subtitles.js';
+import {
+  SUBTITLE_STYLE,
+  getSubtitleFontPath,
+  toDisplayText,
+  layoutCardLines,
+  fitFontSize,
+} from './subtitle-style.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const projectRoot = path.resolve(__dirname, '..');
 const tempDir = path.resolve(projectRoot, 'temp');
-const subtitleFontPath = path.join(projectRoot, 'Fontspring-DEMO-integralcf-demibold.otf');
 
 export type CropProgressCallback = (progress: number) => void;
 
@@ -82,6 +88,7 @@ export async function cropClips(
   // Prefer drawtext over ASS because some FFmpeg builds support drawtext
   // reliably but reject ASS subtitle filter parsing.
   let subtitleOverlay: string | null = null;
+  let subtitleTextFiles: string[] = [];
 
   if (transcript && transcript.trim().length > 0) {
     try {
@@ -113,7 +120,9 @@ export async function cropClips(
           .trim();
 
         if (subtitleText) {
-          subtitleOverlay = buildTimedDrawTextFilter(clipSegments, 1080, 1920);
+          const built = buildTimedDrawTextFilter(clipSegments, 1080, 1920, clipIndex);
+          subtitleOverlay = built.filter;
+          subtitleTextFiles = built.files;
           console.log(`[Cropper] Prepared ${clipSegments.length} timed drawtext subtitle segments for clip ${clipIndex}.`);
         }
       }
@@ -166,92 +175,92 @@ export async function cropClips(
     outputPath,
   ];
 
-  await runFfmpeg(args, {
-    totalDuration: duration,
-    onProgress,
-    timeout: 30 * 60 * 1000, // 30 min timeout for long clips
-  });
+  try {
+    await runFfmpeg(args, {
+      totalDuration: duration,
+      onProgress,
+      timeout: 30 * 60 * 1000, // 30 min timeout for long clips
+    });
+  } finally {
+    for (const file of subtitleTextFiles) {
+      try { fs.unlinkSync(file); } catch { /* ignore */ }
+    }
+  }
 
   return outputPath;
 }
 
-function buildTimedDrawTextFilter(segments: Array<{ start: number; end: number; text: string }>, width: number, height: number): string {
-  const fontFile = fs.existsSync(subtitleFontPath)
-    ? subtitleFontPath
-    : '/System/Library/Fonts/Supplemental/Arial.ttf';
-
-  const x = '(w-text_w)/2';
-  const y = `h-text_h-${Math.round(height * 0.09)}`;
-  const lineSpacing = 18;
-  const fontSize = width >= 1080 ? 96 : 72;
-
-  return segments
-    .map((segment) => {
-      const normalized = segment.text
-        .replace(/\n/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 220);
-
-      const safeText = buildSubtitleLines(normalized)
-        .map((line) => line.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/:/g, '\\:'))
-        .join('\\n');
-
-      return `drawtext=text='${safeText}':fontfile='${fontFile}':fontcolor=white:fontsize=${fontSize}:bordercolor=black:borderw=10:line_spacing=${lineSpacing}:x=${x}:y=${y}:shadowcolor=black@0.7:shadowx=1:shadowy=1:enable='between(t,${segment.start},${segment.end})'`;
-    })
-    .join(',');
+/** Quote a value for use as a single-quoted ffmpeg filter option. */
+function quoteFilterValue(value: string): string {
+  // ffmpeg accepts forward slashes on every OS; a quote is closed, escaped, reopened.
+  return `'${value.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`;
 }
 
-function buildDrawTextFilter(text: string, width: number, height: number): string {
-  const normalized = text
-    .replace(/\\n/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 220);
+/**
+ * Build the drawtext filters for all subtitle segments (style: subtitle-style.ts).
+ *
+ * Each line of each segment gets its own drawtext so every line is centered
+ * independently and placed at a fixed y (works on any ffmpeg version; the
+ * `text_align` option only exists from ffmpeg 6.1).
+ *
+ * Text goes through small temp files (`textfile=` + `expansion=none`) so
+ * quotes, colons and % in speech need no escaping. (Inline `text='a\\nb'`
+ * rendered a literal "n" instead of a line break.)
+ *
+ * Segments are already non-overlapping (see normalizeSegments) and the enable
+ * window is half-open [start, end), so two segments never share a frame.
+ */
+function buildTimedDrawTextFilter(
+  segments: Array<{ start: number; end: number; text: string }>,
+  width: number,
+  height: number,
+  clipIndex: number,
+): { filter: string; files: string[] } {
+  // Style values are tuned for a 1080-wide frame; scale for other sizes.
+  const scale = width / 1080;
+  const fontFile = getSubtitleFontPath();
+  const lineHeight = Math.round(SUBTITLE_STYLE.fontSize * SUBTITLE_STYLE.lineHeightRatio * scale);
+  const bottomMargin = Math.round(height * SUBTITLE_STYLE.bottomMarginRatio);
+  const shadow = Math.max(1, Math.round(SUBTITLE_STYLE.shadowOffset * scale));
 
-  const safeText = buildSubtitleLines(normalized)
-    .map((line) => line.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/:/g, '\\:'))
-    .join('\\n');
+  const files: string[] = [];
+  const filters: string[] = [];
 
-  const fontFile = fs.existsSync(subtitleFontPath)
-    ? subtitleFontPath
-    : '/System/Library/Fonts/Supplemental/Arial.ttf';
+  segments.forEach((segment, i) => {
+    const lines = layoutCardLines(toDisplayText(segment.text));
+    const enable = `'gte(t,${segment.start})*lt(t,${segment.end})'`;
 
-  const x = '(w-text_w)/2';
-  const y = `h-text_h-${Math.round(height * 0.09)}`;
-  const lineSpacing = 18;
-  const fontSize = width >= 1080 ? 96 : 72;
+    lines.forEach((line, j) => {
+      const textPath = path.join(tempDir, `sub_${clipIndex}_${i}_${j}.txt`);
+      fs.writeFileSync(textPath, line, 'utf-8');
+      files.push(textPath);
 
-  return `drawtext=text='${safeText}':fontfile='${fontFile}':fontcolor=white:bordercolor=black:borderw=10:line_spacing=${lineSpacing}:x=${x}:y=${y}:shadowcolor=black@0.7:shadowx=1:shadowy=1`;
-}
+      const fontSize = Math.round(fitFontSize(line) * scale);
+      const border = Math.max(2, Math.round(fontSize * SUBTITLE_STYLE.borderRatio));
+      // Bottom-anchored block: lines stack upward from the bottom margin.
+      // A shrunk line (very long word) is vertically centered in its slot.
+      const slotTop = height - bottomMargin - (lines.length - j) * lineHeight;
+      const y = Math.round(slotTop + (lineHeight - fontSize * SUBTITLE_STYLE.lineHeightRatio) / 2);
 
-function buildSubtitleLines(text: string): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  if (words.length === 0) {
-    return [''];
-  }
+      filters.push([
+        `drawtext=textfile=${quoteFilterValue(textPath)}`,
+        'expansion=none',
+        ...(fontFile ? [`fontfile=${quoteFilterValue(fontFile)}`] : []),
+        'fontcolor=white',
+        `fontsize=${fontSize}`,
+        'bordercolor=black',
+        `borderw=${border}`,
+        `shadowcolor=${SUBTITLE_STYLE.shadowColor}`,
+        `shadowx=${shadow}`,
+        `shadowy=${shadow}`,
+        'x=(w-text_w)/2',
+        `y=${y}`,
+        `enable=${enable}`,
+      ].join(':'));
+    });
+  });
 
-  const maxCharsPerLine = 28;
-  const lines: string[] = [];
-  let currentLine = '';
-
-  for (const word of words) {
-    const candidate = currentLine ? `${currentLine} ${word}` : word;
-
-    if (candidate.length > maxCharsPerLine && currentLine) {
-      lines.push(currentLine);
-      currentLine = word;
-      continue;
-    }
-
-    currentLine = candidate;
-  }
-
-  if (currentLine) {
-    lines.push(currentLine);
-  }
-
-  return lines.slice(0, 3);
+  return { filter: filters.join(','), files };
 }
 
 /**
