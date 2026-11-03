@@ -7,6 +7,7 @@ import { analyzeTranscript } from './analyzer.js';
 import { cropClips } from './cropper.js';
 import { renderFinalClips } from './renderer.js';
 import type { ClipResult, ViralMoment, ProgressCallback } from './types.js';
+import type { WordTiming } from './subtitles.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,6 +51,7 @@ export async function runPipeline(
   console.log('[Pipeline] Stage 2: Getting transcript (YouTube subs → Whisper fallback)...');
 
   let transcript: string;
+  let words: WordTiming[] | undefined;
   try {
     const result = await getTranscriptForYouTube(url, videoPath, (progress, detail) => {
       emitProgress('transcribing', progress, detail ? { detail } : undefined);
@@ -57,7 +59,8 @@ export async function runPipeline(
     if (!result) {
       throw new Error('All transcription methods failed');
     }
-    transcript = result;
+    transcript = result.transcript;
+    words = result.words;
     console.log(`[Pipeline] Transcript length: ${transcript.length} chars`);
     emitProgress('transcribing', 100);
   } catch (err: unknown) {
@@ -106,7 +109,7 @@ export async function runPipeline(
       const cropped = await cropClips(videoPath, moment, i + 1, (subProgress) => {
         const overall = Math.round(((i + subProgress / 100) / totalMoments) * 100);
         emitProgress('cropping', overall, { clip: i + 1 });
-      }, subtitleTranscript);
+      }, subtitleTranscript, words);
       croppedFiles.push(cropped);
 
       console.log(`[Pipeline] Cropped clip ${i + 1}: ${moment.startTime}s - ${moment.endTime}s`);

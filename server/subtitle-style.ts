@@ -43,8 +43,27 @@ export const SUBTITLE_STYLE = {
   /** Soft drop shadow for contrast on bright backgrounds. */
   shadowOffset: 4,
   shadowColor: 'black@0.55',
-  /** Distance from the bottom edge to the last line — clears the TikTok/Reels UI. */
-  bottomMarginRatio: 0.16,
+  shadowOpacity: 0.55,
+  /** Colour of the word being spoken. */
+  highlightColor: '#FFE600',
+  /** Font family name inside Anton-Regular.ttf (used by the ASS renderer). */
+  fontFamily: 'Anton',
+  /**
+   * ASS font size per drawtext pixel size. libass sizes a font by
+   * winAscent + winDescent (Anton: (2876 + 674) / 2048 em), drawtext by the em.
+   */
+  assSizeRatio: (2876 + 674) / 2048,
+  /**
+   * libass draws a top-anchored (\an8) line this much lower than drawtext at
+   * the same y, as a fraction of the font's pixel size (measured: 54px @ 100px).
+   */
+  assTopOffsetRatio: 0.54,
+  /**
+   * Distance from the bottom edge to the last line. 0.42 puts the block just
+   * below the middle of the frame (around the speaker's chest), clear of the
+   * TikTok/Reels caption and button UI.
+   */
+  bottomMarginRatio: 0.42,
 } as const;
 
 /** Anton advance widths in em (from the font's hmtx table). */
