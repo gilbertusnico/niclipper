@@ -51,9 +51,11 @@ export async function transcribeAudio(
   onProgress(25, 'Loading AI model (Whisper)...');
   console.log('[Transcriber] Loading Whisper model...');
 
+  // A segment's audio starts at 0, so shift timestamps back to source-video time
+  const timeOffset = startTime !== undefined && endTime !== undefined ? startTime : 0;
   const transcript = await transcribeWithWhisper(wavPath, (whisperProgress) => {
     onProgress(20 + Math.round(whisperProgress * 0.8));
-  });
+  }, timeOffset);
 
   onProgress(100);
   console.log('[Transcriber] Transcription complete');
@@ -155,10 +157,13 @@ function readWavAsFloat32Array(filePath: string): Float32Array {
 /**
  * Transcribe a WAV file using local Whisper model (via @xenova/transformers).
  * Lazy-loads the pipeline so the model is only downloaded once.
+ *
+ * @param timeOffset - Seconds added to every timestamp (start of the extracted segment)
  */
 async function transcribeWithWhisper(
   audioPath: string,
   onProgress: TranscribeProgressCallback,
+  timeOffset: number = 0,
 ): Promise<string> {
   // Dynamic import — @xenova/transformers is a heavy ESM-only module
   const { pipeline, env } = await import('@xenova/transformers');
@@ -180,9 +185,9 @@ async function transcribeWithWhisper(
   // Corrupted ONNX files from a different model version cause the Reshape error
   try {
     if (fs.existsSync(modelCacheDir)) {
-      const entries = fs.readdirSync(modelCacheDir);
       // Only clear if the cached model doesn't match our target
-      const hasTinyModel = entries.some(e => e.includes('whisper-tiny'));
+      // (transformers.js caches under <cacheDir>/<org>/<model>, e.g. Xenova/whisper-tiny)
+      const hasTinyModel = fs.existsSync(path.join(modelCacheDir, MODEL_ID));
       if (!hasTinyModel) {
         console.log('[Transcriber] Purging stale model cache (wrong model version)...');
         fs.rmSync(modelCacheDir, { recursive: true, force: true });
@@ -250,14 +255,15 @@ async function transcribeWithWhisper(
     // If no chunks, return the full text with a single timestamp from 0
     if (result.text?.trim()) {
       const duration = getAudioDuration(audioPath);
-      return `[TIMESTAMP: 0.0 -> ${duration.toFixed(1)}]\n${result.text.trim()}\n`;
+      return `[TIMESTAMP: ${timeOffset.toFixed(1)} -> ${(timeOffset + duration).toFixed(1)}]\n${result.text.trim()}\n`;
     }
     throw new Error('Whisper returned empty transcription. The audio may be silent or unclear.');
   }
 
   const segments = chunks.map((chunk: any) => {
-    const start = chunk.timestamp?.[0] ?? 0;
-    const end = chunk.timestamp?.[1] ?? start;
+    const start = (chunk.timestamp?.[0] ?? 0) + timeOffset;
+    // Whisper leaves the last chunk's end as null; normalizeSegments estimates it
+    const end = chunk.timestamp?.[1] != null ? chunk.timestamp[1] + timeOffset : start;
     const text = (chunk.text || '').trim();
     return `[TIMESTAMP: ${start.toFixed(1)} -> ${end.toFixed(1)}]\n${text}`;
   });

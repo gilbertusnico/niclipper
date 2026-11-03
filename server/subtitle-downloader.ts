@@ -2,7 +2,7 @@
  * YouTube Subtitle Downloader
  *
  * Downloads existing subtitles/captions from YouTube via yt-dlp.
- * Much faster than Whisper transcription (1-2 seconds instead of 10+ minutes).
+ * Much faster than Whisper transcription (usually well under a minute).
  * Falls back gracefully if no subtitles are available.
  *
  * Priority order: manual subtitles > auto-generated captions
@@ -38,33 +38,21 @@ export async function downloadYouTubeSubtitles(url: string): Promise<string | nu
     fs.mkdirSync(tempDir, { recursive: true });
   }
 
-  // Try languages in priority order: id (Indonesian) → en (English)
+  // Languages in priority order: id (Indonesian) → en (English)
   const languages = ['id', 'en', 'in']; // 'in' is old ISO code for Indonesian
 
   // Strategy 1: Manual subtitles (--write-subs)
-  for (const lang of languages) {
-    try {
-      const result = await tryDownloadSubs(url, videoId, lang, false);
-      if (result) {
-        console.log(`[SubtitleDownloader] Got manual subtitles (${lang})`);
-        return result;
-      }
-    } catch {
-      // continue to next language
-    }
+  const manual = await tryDownloadSubs(url, videoId, languages, false);
+  if (manual) {
+    console.log(`[SubtitleDownloader] Got manual subtitles (${manual.lang})`);
+    return manual.transcript;
   }
 
   // Strategy 2: Auto-generated captions (--write-auto-subs)
-  for (const lang of languages) {
-    try {
-      const result = await tryDownloadSubs(url, videoId, lang, true);
-      if (result) {
-        console.log(`[SubtitleDownloader] Got auto-generated captions (${lang})`);
-        return result;
-      }
-    } catch {
-      // continue to next language
-    }
+  const auto = await tryDownloadSubs(url, videoId, languages, true);
+  if (auto) {
+    console.log(`[SubtitleDownloader] Got auto-generated captions (${auto.lang})`);
+    return auto.transcript;
   }
 
   console.log('[SubtitleDownloader] No subtitles available for this video');
@@ -72,24 +60,26 @@ export async function downloadYouTubeSubtitles(url: string): Promise<string | nu
 }
 
 /**
- * Attempt to download subtitles with specific parameters.
- * Returns parsed transcript string or null.
+ * Download subtitles for all given languages in a single yt-dlp call
+ * (metadata extraction is the slow part, so we only do it once per strategy).
+ * Returns the transcript for the highest-priority language that parsed, or null.
  */
 async function tryDownloadSubs(
   url: string,
   videoId: string,
-  lang: string,
+  languages: string[],
   auto: boolean,
-): Promise<string | null> {
+): Promise<{ lang: string; transcript: string } | null> {
   const ytDlpBin = getYtDlpPath();
-  const outputBase = path.join(tempDir, `subs_${videoId}_${lang}${auto ? '_auto' : ''}`);
+  const prefix = `subs_${videoId}_${auto ? 'auto' : 'manual'}`;
+  const outputBase = path.join(tempDir, prefix);
 
-  // Clean up any previous subtitle files for this video/lang
-  cleanupSubtitleFiles(videoId, lang, auto);
+  // Clean up any previous subtitle files for this video/strategy
+  cleanupSubtitleFiles(prefix);
 
   const args: string[] = [
     auto ? '--write-auto-subs' : '--write-subs',
-    '--sub-lang', lang,
+    '--sub-lang', languages.join(','),
     '--skip-download',        // Don't download the video — just subs
     '--sub-format', 'vtt',    // WebVTT format (easy to parse)
     '--convert-subs', 'vtt',  // Convert to VTT if needed
@@ -104,7 +94,8 @@ async function tryDownloadSubs(
   return new Promise((resolve) => {
     const proc = spawn(ytDlpBin, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 15_000, // Should be fast — just downloading a few KB
+      // Subtitle files are tiny, but YouTube metadata extraction can take ~1 min
+      timeout: 90_000,
     });
 
     let stderr = '';
@@ -116,36 +107,39 @@ async function tryDownloadSubs(
       resolve(null); // yt-dlp not available
     });
 
-    proc.on('close', (code) => {
-      if (code !== 0) {
+    proc.on('close', (code, signal) => {
+      const kind = auto ? 'auto' : 'manual';
+      if (code === null) {
+        console.log(`[SubtitleDownloader] yt-dlp timed out (${kind}, signal ${signal})`);
+      } else if (code !== 0) {
+        // --ignore-errors: some languages may still have been written, so keep going
         const logMsg = stderr.trim().split('\n').filter(l =>
           !l.startsWith('[debug]') && !l.startsWith('[info]')
         ).pop() || stderr.trim();
-        console.log(`[SubtitleDownloader] yt-dlp exit code ${code} for ${lang}: ${logMsg.slice(0, 200)}`);
-        resolve(null);
-        return;
+        console.log(`[SubtitleDownloader] yt-dlp exit code ${code} (${kind}): ${logMsg.slice(0, 200)}`);
       }
 
-      // Find the downloaded subtitle file
+      // Pick the downloaded subtitle file by language priority
       try {
-        const files = fs.readdirSync(tempDir);
-        const subFile = files.find(f =>
-          f.startsWith(`subs_${videoId}_${lang}${auto ? '_auto' : ''}`) &&
-          (f.endsWith('.vtt') || f.endsWith('.srt')),
+        const files = fs.readdirSync(tempDir).filter(f =>
+          f.startsWith(`${prefix}.`) && (f.endsWith('.vtt') || f.endsWith('.srt')),
         );
 
-        if (!subFile) {
-          resolve(null);
-          return;
+        let found: { lang: string; transcript: string } | null = null;
+        for (const lang of languages) {
+          const subFile = files.find(f => f.startsWith(`${prefix}.${lang}.`));
+          if (!subFile) continue;
+          const transcript = parseSubtitleFile(path.join(tempDir, subFile), subFile);
+          if (transcript) {
+            found = { lang, transcript };
+            break;
+          }
         }
 
-        const subPath = path.join(tempDir, subFile);
-        const transcript = parseSubtitleFile(subPath, subFile);
+        // Clean up the subtitle files (we have the transcript in memory)
+        cleanupSubtitleFiles(prefix);
 
-        // Clean up the subtitle file (we have the transcript in memory)
-        try { fs.unlinkSync(subPath); } catch { /* ignore */ }
-
-        resolve(transcript);
+        resolve(found);
       } catch {
         resolve(null);
       }
@@ -387,11 +381,11 @@ export async function getTranscriptForYouTube(
 /**
  * Clean up any leftover subtitle files for a video.
  */
-function cleanupSubtitleFiles(videoId: string, lang: string, auto: boolean): void {
+function cleanupSubtitleFiles(prefix: string): void {
   try {
     const files = fs.readdirSync(tempDir);
     for (const file of files) {
-      if (file.startsWith(`subs_${videoId}_${lang}${auto ? '_auto' : ''}`)) {
+      if (file.startsWith(`${prefix}.`)) {
         try { fs.unlinkSync(path.join(tempDir, file)); } catch { /* ignore */ }
       }
     }
