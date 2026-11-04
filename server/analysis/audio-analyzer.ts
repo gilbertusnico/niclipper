@@ -19,37 +19,52 @@ import {
   ENERGY_BURST_THRESHOLD,
 } from './constants.js';
 
-/** WAV header is 44 bytes for standard PCM */
-const WAV_HEADER_SIZE = 44;
-
 /**
- * Read WAV file and return raw PCM samples as Float32Array
+ * Read a 16-bit PCM WAV file and return mono samples in [-1, 1].
+ * Walks the RIFF chunks to find "fmt " and "data" (ffmpeg may add a LIST chunk,
+ * so the data does not always start at byte 44).
  */
 function readWavSamples(audioPath: string): { samples: Float32Array; sampleRate: number; channels: number } {
   const buffer = fs.readFileSync(audioPath);
-  if (buffer.length < WAV_HEADER_SIZE) {
-    throw new Error('Invalid WAV file: too small');
+  if (buffer.length < 44 || buffer.toString('ascii', 0, 4) !== 'RIFF' || buffer.toString('ascii', 8, 12) !== 'WAVE') {
+    throw new Error('Invalid WAV file');
   }
 
-  const sampleRate = buffer.readUInt32LE(24);
-  const channels = buffer.readUInt16LE(22);
-  const bitsPerSample = buffer.readUInt16LE(34);
-
+  let sampleRate = 0;
+  let channels = 1;
+  let bitsPerSample = 0;
+  let dataOffset = -1;
+  let dataSize = 0;
+  let offset = 12;
+  while (offset + 8 <= buffer.length) {
+    const id = buffer.toString('ascii', offset, offset + 4);
+    const size = buffer.readUInt32LE(offset + 4);
+    if (id === 'fmt ') {
+      channels = buffer.readUInt16LE(offset + 10);
+      sampleRate = buffer.readUInt32LE(offset + 12);
+      bitsPerSample = buffer.readUInt16LE(offset + 22);
+    } else if (id === 'data') {
+      dataOffset = offset + 8;
+      // ffmpeg writes 0xFFFFFFFF when streaming; clamp to the real file size.
+      dataSize = Math.min(size, buffer.length - dataOffset);
+      break;
+    }
+    offset += 8 + size + (size % 2);
+  }
+  if (dataOffset < 0 || !sampleRate) throw new Error('WAV file has no data/fmt chunk');
   if (bitsPerSample !== 16) {
     throw new Error(`Unsupported bits per sample: ${bitsPerSample}. Expected 16-bit.`);
   }
 
-  const dataSize = buffer.length - WAV_HEADER_SIZE;
-  const samplesPerChannel = dataSize / (bitsPerSample / 8) / channels;
+  const frameBytes = 2 * channels;
+  const samplesPerChannel = Math.floor(dataSize / frameBytes);
   const samples = new Float32Array(samplesPerChannel);
-
-  let offset = WAV_HEADER_SIZE;
+  let pos = dataOffset;
   for (let i = 0; i < samplesPerChannel; i++) {
     let sum = 0;
     for (let ch = 0; ch < channels; ch++) {
-      const sample = buffer.readInt16LE(offset);
-      offset += 2;
-      sum += sample;
+      sum += buffer.readInt16LE(pos);
+      pos += 2;
     }
     samples[i] = sum / channels / 32768;
   }
@@ -123,13 +138,21 @@ export function analyzeAudio(audioPath: string): AudioFeatures {
     ? rmsPerFrame.reduce((a, b) => a + b, 0) / rmsPerFrame.length
     : 0;
 
-  // Detect silence segments (RMS below threshold for minimum duration)
+  // Detect silence segments. The threshold adapts to the recording: a quiet
+  // podcast and one with background music have very different noise floors.
+  const sortedRms = [...rmsPerFrame].sort((a, b) => a - b);
+  const medianRms = sortedRms[Math.floor(sortedRms.length / 2)] ?? 0;
+  const floorRms = sortedRms[Math.floor(sortedRms.length * 0.1)] ?? 0;
+  const silenceThreshold = Math.min(
+    SILENCE_RMS_THRESHOLD,
+    Math.max(0.002, floorRms * 1.8, medianRms * 0.22),
+  );
   const silenceSegments: PauseSegment[] = [];
   let silenceStart: number | null = null;
 
   for (let f = 0; f < totalFrames; f++) {
     const timeMs = f * AUDIO_FRAME_MS;
-    const isSilence = rmsPerFrame[f] < SILENCE_RMS_THRESHOLD;
+    const isSilence = rmsPerFrame[f] < silenceThreshold;
 
     if (isSilence && silenceStart === null) {
       silenceStart = timeMs;
