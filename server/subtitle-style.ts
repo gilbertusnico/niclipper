@@ -28,8 +28,8 @@ const FALLBACK_FONTS = [
 
 /** Rendering parameters, in pixels for a 1080×1920 frame. */
 export const SUBTITLE_STYLE = {
-  /** Base font size. Anton caps are ~0.86em tall → ~86px capitals. */
-  fontSize: 100,
+  /** Base font size. Anton caps are ~0.86em tall → ~82px capitals. */
+  fontSize: 95,
   /** Never shrink a line below this when auto-fitting a very long word. */
   minFontSize: 64,
   /** Max line width: 1080 minus ~90px safe margin on each side. */
@@ -59,11 +59,11 @@ export const SUBTITLE_STYLE = {
    */
   assTopOffsetRatio: 0.54,
   /**
-   * Distance from the bottom edge to the last line. 0.42 puts the block just
-   * below the middle of the frame (around the speaker's chest), clear of the
+   * Distance from the bottom edge to the last line. 0.37 puts the block at
+   * ~52–63% from the top (around the speaker's chest), clear of the
    * TikTok/Reels caption and button UI.
    */
-  bottomMarginRatio: 0.42,
+  bottomMarginRatio: 0.37,
 } as const;
 
 /** Anton advance widths in em (from the font's hmtx table). */
