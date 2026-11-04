@@ -4,11 +4,15 @@
  */
 
 // ─── Clip length ─────────────────────────────────────────────────────────
-export const CLIP_MIN_SECONDS = 20;
-export const CLIP_MAX_SECONDS = 60;
-/** Preferred length; windows are scored with a Gaussian around this. */
-export const CLIP_IDEAL_SECONDS = 40;
-export const CLIP_IDEAL_SPREAD = 18;
+export const CLIP_MIN_SECONDS = 25;
+export const CLIP_MAX_SECONDS = 75;
+/** Preferred length; windows are scored with a Gaussian around this.
+ *  Conversational stories need room for their setup, so ~50 s. */
+export const CLIP_IDEAL_SECONDS = 50;
+export const CLIP_IDEAL_SPREAD = 22;
+/** Opening/closing stretch of the video (greetings, guest intro, thanks, sign-off). */
+export const EDGE_ZONE_SECONDS = 90;
+export const EDGE_ZONE_FRACTION = 0.05;
 /** How many clips AI mode returns. */
 export const DEFAULT_MAX_CLIPS = 3;
 

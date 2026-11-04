@@ -7,6 +7,7 @@ export interface ViralMoment {
   endTime: number;
   reason: string;
   title?: string;
+  description?: string;
   /** Retention prediction breakdown (0-100 each) */
   retentionScore?: {
     hook3s: number;
@@ -38,6 +39,8 @@ export interface ClipResult {
   endTime: number;
   /** User-specified title, or first few words of transcript */
   title?: string;
+  /** YouTube-ready description (AI mode) */
+  description?: string;
   /** Retention prediction breakdown (0-100 each) */
   retentionScore?: {
     hook3s: number;

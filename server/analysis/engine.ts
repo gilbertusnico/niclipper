@@ -21,6 +21,7 @@ import { buildUnits, splitUnitsAtPauses } from './units.js';
 import { analyzeAudio } from './audio-analyzer.js';
 import { analyzeUnits } from './features.js';
 import { selectMoments } from './selector.js';
+import type { SourceInfo } from './describe.js';
 import { DEFAULT_MAX_CLIPS } from './constants.js';
 
 /**
@@ -35,6 +36,7 @@ export async function analyzeTranscript(
   audioPath?: string,
   onProgress?: AnalysisProgressCallback,
   maxResults: number = DEFAULT_MAX_CLIPS,
+  source: SourceInfo = {},
 ): Promise<ViralMoment[]> {
   const progress = (p: number) => onProgress?.(p);
 
@@ -62,15 +64,15 @@ export async function analyzeTranscript(
     console.log(`[Engine] Split at pauses: ${before} → ${units.length} units`);
   }
 
-  const analysis = analyzeUnits(units, audio);
+  const analysis = analyzeUnits(units, audio, source.title);
   progress(70);
 
-  const moments = selectMoments(analysis, maxResults);
+  const moments = selectMoments(analysis, maxResults, source);
   progress(100);
 
   console.log(`[Engine] Selected ${moments.length} clips`);
   moments.forEach((m, i) => {
-    console.log(`  #${i + 1}: ${m.startTime.toFixed(1)}s – ${m.endTime.toFixed(1)}s (score ${m.finalScore}) → ${m.reason}`);
+    console.log(`  #${i + 1}: ${m.startTime.toFixed(1)}s – ${m.endTime.toFixed(1)}s (score ${m.finalScore}) → ${m.title}`);
   });
   return moments;
 }

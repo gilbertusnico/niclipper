@@ -26,6 +26,8 @@ interface ClipData {
   startTime: number;
   endTime: number;
   reason?: string;
+  title?: string;
+  description?: string;
   finalScore?: number;
   retentionScore?: {
     hook3s: number;
