@@ -13,6 +13,7 @@ import { getTranscriptForYouTube } from './subtitle-downloader.js';
 import { cropClips } from './cropper.js';
 import { renderFinalClips } from './renderer.js';
 import type { ClipResult, ViralMoment, ProgressCallback } from './types.js';
+import type { WordTiming } from './subtitles.js';
 
 export interface TimeRange {
   start: number; // in seconds
@@ -52,6 +53,9 @@ export async function runManualPipeline(
   // ── Stage 2: Transcribe (optional — for subtitles) ────────────────
   // ⚡ Strategy: Try YouTube subtitles first (1-2 seconds), fall back to Whisper AI
   let resolvedTranscript: string | undefined = transcript;
+  // Per-word timing only comes from YouTube auto-captions; a provided (edited)
+  // transcript has none, so its highlight timing is estimated.
+  let words: WordTiming[] | undefined;
 
   if (subtitles === 'none') {
     // User explicitly chose no subtitles — skip transcription entirely
@@ -74,7 +78,8 @@ export async function runManualPipeline(
       const result = await getTranscriptForYouTube(url, videoPath, (progress, detail) => {
         emitProgress('transcribing', progress, detail ? { detail } : undefined);
       }, transcribeStart, transcribeEnd);
-      resolvedTranscript = result ?? undefined;
+      resolvedTranscript = result?.transcript;
+      words = result?.words;
       emitProgress('transcribing', 100);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Transcription failed';
@@ -108,7 +113,7 @@ export async function runManualPipeline(
       const cropped = await cropClips(videoPath, moment, i + 1, (subProgress) => {
         const overall = Math.round(((i + subProgress / 100) / totalMoments) * 100);
         emitProgress('cropping', overall, { clip: i + 1 });
-      }, resolvedTranscript);
+      }, resolvedTranscript, words);
       croppedFiles.push(cropped);
     }
     emitProgress('cropping', 100);

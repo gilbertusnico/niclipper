@@ -14,6 +14,13 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { getYtDlpPath } from './ytdlp.js';
+import type { WordTiming } from './subtitles.js';
+
+/** A transcript plus, when the source has them, per-word timings (absolute seconds). */
+export interface TranscriptResult {
+  transcript: string;
+  words?: WordTiming[];
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,9 +34,10 @@ const tempDir = path.resolve(__dirname, '..', 'temp');
  *  2. Try auto-generated captions — id, then en
  *  3. If all fail, return null (caller falls back to Whisper)
  *
- * @returns Transcript string in `[TIMESTAMP: start -> end]\ntext` format, or null
+ * @returns Transcript in `[TIMESTAMP: start -> end]\ntext` format (plus word timings
+ *          when YouTube provides them), or null
  */
-export async function downloadYouTubeSubtitles(url: string): Promise<string | null> {
+export async function downloadYouTubeSubtitles(url: string): Promise<TranscriptResult | null> {
   const videoId = extractVideoId(url);
   if (!videoId) return null;
 
@@ -44,19 +52,27 @@ export async function downloadYouTubeSubtitles(url: string): Promise<string | nu
   // Strategy 1: Manual subtitles (--write-subs)
   const manual = await tryDownloadSubs(url, videoId, languages, false);
   if (manual) {
-    console.log(`[SubtitleDownloader] Got manual subtitles (${manual.lang})`);
-    return manual.transcript;
+    console.log(`[SubtitleDownloader] Got manual subtitles (${manual.lang})${wordTimingLabel(manual)}`);
+    return manual.result;
   }
 
   // Strategy 2: Auto-generated captions (--write-auto-subs)
-  const auto = await tryDownloadSubs(url, videoId, languages, true);
+  // The default (web) client returns the raw ASR track with per-word offsets;
+  // the android client only returns line-level captions. Try web first, keep
+  // android as a fallback in case the web client is blocked.
+  const auto = await tryDownloadSubs(url, videoId, languages, true, 'web')
+    ?? await tryDownloadSubs(url, videoId, languages, true, 'android');
   if (auto) {
-    console.log(`[SubtitleDownloader] Got auto-generated captions (${auto.lang})`);
-    return auto.transcript;
+    console.log(`[SubtitleDownloader] Got auto-generated captions (${auto.lang})${wordTimingLabel(auto)}`);
+    return auto.result;
   }
 
   console.log('[SubtitleDownloader] No subtitles available for this video');
   return null;
+}
+
+function wordTimingLabel(found: { result: TranscriptResult }): string {
+  return found.result.words ? `, ${found.result.words.length} timed words` : ', no word timing';
 }
 
 /**
@@ -69,7 +85,8 @@ async function tryDownloadSubs(
   videoId: string,
   languages: string[],
   auto: boolean,
-): Promise<{ lang: string; transcript: string } | null> {
+  client: 'android' | 'web' = 'android',
+): Promise<{ lang: string; result: TranscriptResult } | null> {
   const ytDlpBin = getYtDlpPath();
   const prefix = `subs_${videoId}_${auto ? 'auto' : 'manual'}`;
   const outputBase = path.join(tempDir, prefix);
@@ -81,13 +98,19 @@ async function tryDownloadSubs(
     auto ? '--write-auto-subs' : '--write-subs',
     '--sub-lang', languages.join(','),
     '--skip-download',        // Don't download the video — just subs
-    '--sub-format', 'vtt',    // WebVTT format (easy to parse)
-    '--convert-subs', 'vtt',  // Convert to VTT if needed
+    // json3 carries per-word timing for auto-captions (word highlight); VTT as fallback.
+    // No --convert-subs: it cannot convert json3 and would replace it with VTT.
+    '--sub-format', 'json3/vtt/srt/best',
+    '--ignore-no-formats-error', // subtitles only — don't fail on video format checks
     '--output', `${outputBase}.%(ext)s`,
     '--no-warnings',
     '--ignore-errors',
-    '--extractor-args', 'youtube:player_client=android',
-    '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+    ...(client === 'android'
+      ? [
+          '--extractor-args', 'youtube:player_client=android',
+          '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+        ]
+      : []), // web: yt-dlp's default client and user agent
     url,
   ];
 
@@ -108,7 +131,7 @@ async function tryDownloadSubs(
     });
 
     proc.on('close', (code, signal) => {
-      const kind = auto ? 'auto' : 'manual';
+      const kind = `${auto ? 'auto' : 'manual'}, ${client}`;
       if (code === null) {
         console.log(`[SubtitleDownloader] yt-dlp timed out (${kind}, signal ${signal})`);
       } else if (code !== 0) {
@@ -122,16 +145,16 @@ async function tryDownloadSubs(
       // Pick the downloaded subtitle file by language priority
       try {
         const files = fs.readdirSync(tempDir).filter(f =>
-          f.startsWith(`${prefix}.`) && (f.endsWith('.vtt') || f.endsWith('.srt')),
+          f.startsWith(`${prefix}.`) && /\.(json3|vtt|srt)$/.test(f),
         );
 
-        let found: { lang: string; transcript: string } | null = null;
+        let found: { lang: string; result: TranscriptResult } | null = null;
         for (const lang of languages) {
           const subFile = files.find(f => f.startsWith(`${prefix}.${lang}.`));
           if (!subFile) continue;
-          const transcript = parseSubtitleFile(path.join(tempDir, subFile), subFile);
-          if (transcript) {
-            found = { lang, transcript };
+          const result = parseSubtitleFile(path.join(tempDir, subFile), subFile);
+          if (result) {
+            found = { lang, result };
             break;
           }
         }
@@ -151,17 +174,74 @@ async function tryDownloadSubs(
  * Parse a subtitle file (VTT or SRT) into the timestamped transcript format.
  * Format: `[TIMESTAMP: start -> end]\ntext`
  */
-function parseSubtitleFile(filePath: string, filename: string): string | null {
+function parseSubtitleFile(filePath: string, filename: string): TranscriptResult | null {
   const content = fs.readFileSync(filePath, 'utf-8');
   const ext = path.extname(filename).toLowerCase();
 
-  if (ext === '.vtt') {
-    return parseVtt(content);
-  } else if (ext === '.srt') {
-    return parseSrt(content);
+  if (ext === '.json3') {
+    return parseJson3(content);
+  }
+  const transcript = ext === '.vtt' ? parseVtt(content) : ext === '.srt' ? parseSrt(content) : null;
+  return transcript ? { transcript } : null;
+}
+
+interface Json3Event {
+  tStartMs?: number;
+  dDurationMs?: number;
+  aAppend?: number;
+  segs?: { utf8?: string; tOffsetMs?: number }[];
+}
+
+/**
+ * Parse YouTube's json3 caption format.
+ *
+ * Each event is one caption line; for auto-captions every seg is one word with
+ * `tOffsetMs` relative to the event start:
+ * ```
+ * { "tStartMs": 120760, "dDurationMs": 1600,
+ *   "segs": [{ "utf8": "gua" }, { "utf8": " paham.", "tOffsetMs": 160 }] }
+ * ```
+ * Manual subtitles have one seg per line and no offsets → no word timing.
+ */
+function parseJson3(content: string): TranscriptResult | null {
+  let events: Json3Event[];
+  try {
+    events = (JSON.parse(content) as { events?: Json3Event[] }).events ?? [];
+  } catch {
+    return null;
   }
 
-  return null;
+  const segments: string[] = [];
+  const words: WordTiming[] = [];
+  let lineCount = 0;
+  let timedLineCount = 0;
+
+  for (const ev of events) {
+    if (!ev.segs || ev.aAppend || ev.tStartMs === undefined) continue;
+    const text = ev.segs.map(s => s.utf8 ?? '').join('').replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+
+    const start = ev.tStartMs / 1000;
+    const end = (ev.tStartMs + (ev.dDurationMs ?? 0)) / 1000;
+    segments.push(`[TIMESTAMP: ${start.toFixed(1)} -> ${end.toFixed(1)}]\n${text}`);
+
+    lineCount++;
+    if (ev.segs.some(s => s.tOffsetMs !== undefined)) timedLineCount++;
+
+    // A word lasts until the next word in the line starts; the last one until the line ends
+    const lineWords = ev.segs
+      .map(s => ({ text: (s.utf8 ?? '').trim(), start: (ev.tStartMs! + (s.tOffsetMs ?? 0)) / 1000 }))
+      .filter(w => w.text);
+    lineWords.forEach((w, i) => {
+      const next = lineWords[i + 1];
+      words.push({ start: w.start, end: next ? next.start : Math.max(end, w.start), text: w.text });
+    });
+  }
+
+  if (segments.length === 0) return null;
+  // Only trust word timing when most lines actually have per-word offsets
+  const hasWordTiming = timedLineCount > 0 && timedLineCount >= lineCount * 0.5;
+  return { transcript: segments.join('\n\n'), ...(hasWordTiming ? { words } : {}) };
 }
 
 /**
@@ -335,7 +415,8 @@ function extractVideoId(url: string): string | null {
  * @param onProgress - Progress callback
  * @param startTime - Optional start time in seconds (for Whisper segment transcription)
  * @param endTime - Optional end time in seconds
- * @returns Transcript string in timestamped format, or null if both methods fail
+ * @returns Transcript in timestamped format (plus word timings from YouTube
+ *          auto-captions), or null if both methods fail
  */
 export async function getTranscriptForYouTube(
   url: string,
@@ -343,7 +424,7 @@ export async function getTranscriptForYouTube(
   onProgress: (progress: number, detail?: string) => void,
   startTime?: number,
   endTime?: number,
-): Promise<string | null> {
+): Promise<TranscriptResult | null> {
   // Step 1: Try YouTube subtitles (super fast — 1-2 seconds)
   onProgress(5, 'Checking YouTube subtitles...');
   console.log('[Transcript] Trying YouTube subtitles first (lightning fast)...');
@@ -351,8 +432,8 @@ export async function getTranscriptForYouTube(
   try {
     const youtubeSubs = await downloadYouTubeSubtitles(url);
     if (youtubeSubs) {
-      const segmentCount = youtubeSubs.split('[TIMESTAMP:').length - 1;
-      console.log(`[Transcript] Got YouTube subtitles! ${segmentCount} segments, ${youtubeSubs.length} chars`);
+      const segmentCount = youtubeSubs.transcript.split('[TIMESTAMP:').length - 1;
+      console.log(`[Transcript] Got YouTube subtitles! ${segmentCount} segments, ${youtubeSubs.transcript.length} chars`);
       onProgress(100, `YouTube subtitles loaded (${segmentCount} segments)`);
       return youtubeSubs;
     }
@@ -370,7 +451,7 @@ export async function getTranscriptForYouTube(
   const { transcribeAudio } = await import('./transcriber.js');
   try {
     const transcript = await transcribeAudio(videoPath, onProgress, startTime, endTime);
-    return transcript;
+    return { transcript };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Transcription failed';
     console.warn(`[Transcript] Whisper transcription also failed: ${msg}`);

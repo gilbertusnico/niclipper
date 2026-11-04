@@ -4,7 +4,7 @@ import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import type { ViralMoment } from './types.js';
 import { runFfmpeg, getFfmpegPath, hasFfmpegFilter } from './ffmpeg.js';
-import { parseTranscriptToSegments, filterSegmentsForClip } from './subtitles.js';
+import { buildCardsForClip, writeHighlightAssFile, type WordTiming } from './subtitles.js';
 import {
   SUBTITLE_STYLE,
   getSubtitleFontPath,
@@ -38,6 +38,8 @@ interface VideoDimensions {
  * @param clipIndex - 1-based index of the clip
  * @param onProgress - Callback for cropping progress (0-100)
  * @param transcript - Optional full transcript string to burn subtitles
+ * @param words - Optional per-word timings (absolute seconds) for the yellow
+ *                highlight; estimated from the transcript when missing
  * @returns Path to the cropped temp file
  */
 export async function cropClips(
@@ -46,6 +48,7 @@ export async function cropClips(
   clipIndex: number,
   onProgress: CropProgressCallback,
   transcript?: string,
+  words?: WordTiming[],
 ): Promise<string> {
   // Ensure temp directory exists
   if (!fs.existsSync(tempDir)) {
@@ -85,36 +88,39 @@ export async function cropClips(
   const duration = moment.endTime - moment.startTime;
 
   // ── Subtitle generation (burned into video) ───────────────────
-  // Prefer drawtext over ASS because some FFmpeg builds support drawtext
-  // reliably but reject ASS subtitle filter parsing.
+  // ASS (libass) draws the word-highlight captions in one filter. drawtext is
+  // kept as a fallback for FFmpeg builds without libass (no highlight there).
   let subtitleOverlay: string | null = null;
   let subtitleTextFiles: string[] = [];
 
   if (transcript && transcript.trim().length > 0) {
     try {
-      const allSegments = parseTranscriptToSegments(transcript);
-      const clipSegments = filterSegmentsForClip(allSegments, moment.startTime, moment.endTime);
+      const cards = buildCardsForClip(transcript, words, moment.startTime, moment.endTime);
+      const timing = words?.length ? 'YouTube word timing' : 'estimated word timing';
 
       // No fallback: one frozen card of unrelated text for the whole clip is worse
       // than no subtitles, and it hides timestamp bugs.
-      if (clipSegments.length === 0) {
+      if (cards.length === 0) {
         console.warn(`[Cropper] No timestamped subtitle segments matched clip ${clipIndex} (${moment.startTime}s–${moment.endTime}s); skipping subtitles.`);
-      }
-
-      if (clipSegments.length > 0) {
-        const subtitleText = clipSegments
-          .map((seg) => seg.text)
-          .filter(Boolean)
-          .join(' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-
-        if (subtitleText) {
-          const built = buildTimedDrawTextFilter(clipSegments, 1080, 1920, clipIndex);
-          subtitleOverlay = built.filter;
-          subtitleTextFiles = built.files;
-          console.log(`[Cropper] Prepared ${clipSegments.length} timed drawtext subtitle segments for clip ${clipIndex}.`);
-        }
+      } else if (hasFfmpegFilter('ass')) {
+        const assPath = path.join(tempDir, `sub_${clipIndex}.ass`);
+        writeHighlightAssFile(cards, assPath, 1080, 1920);
+        subtitleTextFiles = [assPath];
+        const fontFile = getSubtitleFontPath();
+        subtitleOverlay = `ass=filename=${quoteFilterValue(assPath)}`
+          + (fontFile ? `:fontsdir=${quoteFilterValue(path.dirname(fontFile))}` : '');
+        console.log(`[Cropper] Prepared ${cards.length} word-highlight subtitle cards (${timing}) for clip ${clipIndex}.`);
+      } else if (hasFfmpegFilter('drawtext')) {
+        const segments = cards.map((c) => ({ start: c.start, end: c.end, text: c.words.map((w) => w.text).join(' ') }));
+        const built = buildTimedDrawTextFilter(segments, 1080, 1920, clipIndex);
+        subtitleOverlay = built.filter;
+        subtitleTextFiles = built.files;
+        console.warn(`[Cropper] FFmpeg has no 'ass' filter; using drawtext without word highlight for clip ${clipIndex}.`);
+      } else {
+        console.warn('[Cropper] FFmpeg has neither ass nor drawtext filter. Skipping subtitle burn-in for clip.', {
+          clipIndex,
+          ffmpegPath: getFfmpegPath(),
+        });
       }
     } catch (err) {
       console.warn(`[Cropper] Failed to generate subtitles for clip ${clipIndex}:`, err instanceof Error ? err.message : err);
@@ -131,21 +137,9 @@ export async function cropClips(
     `crop=1080:1920`,
   ];
 
-  // Some FFmpeg builds are missing subtitle/drawtext support entirely.
-  // Add text overlay after the video is at 1080x1920.
-  // We prefer drawtext because it works on the current FFmpeg build and is
-  // more robust than ASS parsing in this environment.
+  // Text overlay goes after the video is at 1080x1920 (the ASS PlayRes).
   if (subtitleOverlay) {
-    const subtitleFilterSupported = hasFfmpegFilter('drawtext');
-    if (!subtitleFilterSupported) {
-      console.warn('[Cropper] FFmpeg drawtext filter is unavailable in this build. Skipping subtitle burn-in for clip.', {
-        clipIndex,
-        ffmpegPath: getFfmpegPath(),
-      });
-      subtitleOverlay = null;
-    } else {
-      vfParts.push(subtitleOverlay);
-    }
+    vfParts.push(subtitleOverlay);
   }
 
   const vf = vfParts.join(',');

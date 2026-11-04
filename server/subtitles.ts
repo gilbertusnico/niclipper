@@ -1,13 +1,19 @@
 /**
  * Subtitle utilities for Niclipper
  *
- * Parses the Whisper timestamped transcript format and generates
- * ASS (Advanced SubStation Alpha) subtitle files with TikTok-style
- * formatting: bold white text with black outline, centered.
+ * Parses the timestamped transcript format and generates ASS (Advanced
+ * SubStation Alpha) subtitle files with TikTok-style captions where the
+ * word being spoken is highlighted.
  */
 
 import fs from 'fs';
-import { SUBTITLE_STYLE, wrapSubtitleLines } from './subtitle-style.js';
+import {
+  SUBTITLE_STYLE,
+  wrapSubtitleLines,
+  layoutCardLines,
+  fitFontSize,
+  toDisplayText,
+} from './subtitle-style.js';
 
 export interface SubtitleSegment {
   start: number; // seconds
@@ -231,107 +237,251 @@ function parseClockToSeconds(value: string): number {
   return 0;
 }
 
+// ─── Word-level cards (yellow highlight on the spoken word) ─────────
+
+/** One spoken word with its time span (seconds). */
+export interface WordTiming {
+  start: number;
+  end: number;
+  text: string;
+}
+
+/** One on-screen caption card (≤ maxLines lines) and the words in it. */
+export interface SubtitleCard {
+  start: number;
+  end: number;
+  words: WordTiming[];
+}
+
+/** Start a new card after a silence this long (seconds). */
+const CARD_PAUSE_BREAK = 0.8;
+/** Keep a card on screen this long after its last word, unless the next card starts. */
+const CARD_HOLD_AFTER = 0.5;
+
+/** Sound tags like "[tertawa]" / "[Musik]" stay in the transcript but aren't drawn. */
+function stripSoundTags(text: string): string {
+  return text.replace(/\[[^\]]*\]/g, ' ');
+}
+
+/** Split each word's text on whitespace so every WordTiming is a single token. */
+function splitWordTokens(words: WordTiming[]): WordTiming[] {
+  const out: WordTiming[] = [];
+  for (const w of words) {
+    const tokens = stripSoundTags(w.text).split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) continue;
+    const step = (w.end - w.start) / tokens.length;
+    tokens.forEach((text, i) => out.push({ start: w.start + i * step, end: w.start + (i + 1) * step, text }));
+  }
+  return out;
+}
+
 /**
- * Format seconds to ASS time format: H:MM:SS.cc (centiseconds)
+ * Group real word timings (e.g. from YouTube json3 auto-captions) into cards:
+ * a new card starts when the text would exceed maxLines, after a pause, or
+ * after a sentence end.
  */
+function cardsFromWords(input: WordTiming[]): SubtitleCard[] {
+  const words = splitWordTokens([...input].sort((a, b) => a.start - b.start));
+  // A caption line's last word "lasts" until the line ends, overlapping the next
+  // line; end every word no later than the next word starts.
+  for (let i = 0; i < words.length - 1; i++) {
+    words[i].end = Math.max(words[i].start, Math.min(words[i].end, words[i + 1].start));
+  }
+  const cards: SubtitleCard[] = [];
+  let current: WordTiming[] = [];
+
+  const flush = () => {
+    if (current.length === 0) return;
+    cards.push({ start: current[0].start, end: current[current.length - 1].end, words: current });
+    current = [];
+  };
+
+  for (const word of words) {
+    const prev = current[current.length - 1];
+    if (prev) {
+      const text = [...current, word].map((w) => w.text).join(' ');
+      const tooLong = wrapSubtitleLines(text).length > SUBTITLE_STYLE.maxLines;
+      const pause = word.start - prev.end > CARD_PAUSE_BREAK;
+      const sentenceEnd = /[.?!…]$/.test(prev.text) && current.length >= 2;
+      if (tooLong || pause || sentenceEnd) flush();
+    }
+    current.push(word);
+  }
+  flush();
+
+  // Hold each card briefly after its last word, but never into the next card.
+  for (let i = 0; i < cards.length; i++) {
+    const next = cards[i + 1];
+    const held = cards[i].end + CARD_HOLD_AFTER;
+    cards[i].end = next ? Math.min(held, next.start) : held;
+  }
+  return cards;
+}
+
+/**
+ * Turn normalized segments into cards, estimating each word's timing from its
+ * length (used for manual subtitles, Whisper, and edited transcripts).
+ */
+function cardsFromSegments(segments: SubtitleSegment[]): SubtitleCard[] {
+  return segments.map((seg) => {
+    const tokens = stripSoundTags(seg.text).split(/\s+/).filter(Boolean);
+    // +2 per word approximates the pause between words
+    const weights = tokens.map((t) => t.length + 2);
+    const total = weights.reduce((a, b) => a + b, 0) || 1;
+    const duration = seg.end - seg.start;
+    let t = seg.start;
+    const words = tokens.map((text, i) => {
+      const end = i === tokens.length - 1 ? seg.end : t + duration * (weights[i] / total);
+      const word = { start: t, end, text };
+      t = end;
+      return word;
+    });
+    return { start: seg.start, end: seg.end, words };
+  });
+}
+
+/**
+ * Build caption cards for a clip window, with times offset so the clip starts at 0.
+ * Uses real word timings when available, otherwise estimates them from the transcript.
+ */
+export function buildCardsForClip(
+  transcript: string,
+  words: WordTiming[] | undefined,
+  clipStart: number,
+  clipEnd: number,
+): SubtitleCard[] {
+  const clipWords = words?.filter((w) => w.end > clipStart && w.start < clipEnd);
+  const cards = clipWords && clipWords.length > 0
+    ? cardsFromWords(clipWords)
+    : cardsFromSegments(filterSegmentsForClip(parseTranscriptToSegments(transcript), clipStart, clipEnd));
+  // cardsFromSegments already works on clip-relative segments
+  const offset = clipWords && clipWords.length > 0 ? clipStart : 0;
+  const duration = clipEnd - clipStart;
+
+  return cards
+    .map((card) => ({
+      start: Math.max(0, card.start - offset),
+      end: Math.min(duration, card.end - offset),
+      words: card.words.map((w) => ({
+        start: Math.max(0, w.start - offset),
+        end: Math.min(duration, w.end - offset),
+        text: w.text,
+      })),
+    }))
+    .filter((card) => card.end > card.start && card.words.length > 0);
+}
+
+/** Format seconds to ASS time: H:MM:SS.cc */
 function formatAssTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const cs = Math.round((seconds - Math.floor(seconds)) * 100);
+  const totalCs = Math.max(0, Math.round(seconds * 100));
+  const h = Math.floor(totalCs / 360000);
+  const m = Math.floor((totalCs % 360000) / 6000);
+  const s = Math.floor((totalCs % 6000) / 100);
+  const cs = totalCs % 100;
   return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
 }
 
-/**
- * Escape text for ASS format.
- * ASS uses braces {} for tags and curly braces \{ to escape.
- * We need to escape: {, }, and newlines.
- */
+/** Make speech text safe inside an ASS Dialogue line ({} start override tags). */
 function escapeAssText(text: string): string {
-  return text
-    .replace(/\{/g, '\\{')
-    .replace(/\}/g, '\\}')
-    .replace(/\n/g, '\\N');
+  return text.replace(/\\/g, '/').replace(/\{/g, '(').replace(/\}/g, ')');
+}
+
+/** "#RRGGBB" → ASS inline colour "&HBBGGRR&" */
+function toAssColor(hex: string): string {
+  const [r, g, b] = [hex.slice(1, 3), hex.slice(3, 5), hex.slice(5, 7)];
+  return `&H${b}${g}${r}&`.toUpperCase();
 }
 
 /**
- * Generate an ASS subtitle file content for TikTok-style subtitles.
+ * Generate ASS content for word-highlight captions (style: subtitle-style.ts).
  *
- * TikTok style = bold white text with thick black outline, centered.
- * Uses Plus Jakarta Sans Bold — a modern geometric sans-serif font
- * that's widely used in social media content.
- *
- * @param segments - Timed subtitle segments
- * @param width - Video width (default 1080)
- * @param height - Video height (default 1920)
- * @returns ASS file content as a string
+ * Each card is drawn as one event per line per highlight state, so the word
+ * being spoken is yellow and the rest white. Lines get an explicit \pos with
+ * the same layout as the old drawtext renderer (balanced lines, per-line
+ * font fit, bottom-anchored block).
  */
-export function generateAssContent(
-  segments: SubtitleSegment[],
+export function generateHighlightAss(
+  cards: SubtitleCard[],
   width: number = 1080,
   height: number = 1920,
 ): string {
-  // ─── Script Info ──────────────────────────────────────────────
-  const lines: string[] = [
+  const scale = width / 1080;
+  const lineHeight = SUBTITLE_STYLE.fontSize * SUBTITLE_STYLE.lineHeightRatio * scale;
+  const bottomMargin = height * SUBTITLE_STYLE.bottomMarginRatio;
+  const shadow = Math.max(1, Math.round(SUBTITLE_STYLE.shadowOffset * scale));
+  // ASS alpha is transparency (00 = opaque)
+  const shadowAlpha = Math.round((1 - SUBTITLE_STYLE.shadowOpacity) * 255).toString(16).padStart(2, '0').toUpperCase();
+  const white = toAssColor('#FFFFFF');
+  const highlight = toAssColor(SUBTITLE_STYLE.highlightColor);
+
+  const out: string[] = [
     '[Script Info]',
     'ScriptType: v4.00+',
     `PlayResX: ${width}`,
     `PlayResY: ${height}`,
     'ScaledBorderAndShadow: yes',
+    'WrapStyle: 2', // lines are pre-wrapped; never let libass re-wrap
     '',
+    '[V4+ Styles]',
+    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+    `Style: Caption,${SUBTITLE_STYLE.fontFamily},${Math.round(SUBTITLE_STYLE.fontSize * SUBTITLE_STYLE.assSizeRatio * scale)},&H00FFFFFF,&H00FFFFFF,&H00000000,&H${shadowAlpha}000000,0,0,0,0,100,100,0,0,1,0,${shadow},8,0,0,0,1`,
+    '',
+    '[Events]',
+    'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
   ];
 
-  // ─── Styles ───────────────────────────────────────────────────
-  // TikTok-style: Plus Jakarta Sans Bold, white fill, thick black outline, no shadow.
-  // Plus Jakarta Sans is a modern geometric sans-serif, popular in social media content.
-  // Color format in ASS: AABBGGRR (hex)
-  // PrimaryColour: &H00FFFFFF  = white
-  // OutlineColour: &H00000000  = black
-  // Bold: -1 = yes
-  // BorderStyle: 1 = outline
-  // Outline: 3.5 = thickness
-  // Shadow: 0
-  // Alignment: 2 = bottom center
-  // MarginV: ~640 = position text at about 1/3 from bottom of a 1920-height video
-  // (1920 / 3 ≈ 640px from bottom edge — gives a nice elevated look)
-  lines.push(
-    '[V4+ Styles]',
-    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    'Style: TikTok,Plus Jakarta Sans,68,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,1,3.5,0,2,50,50,640,1',
-    '',
-  );
+  for (const card of cards) {
+    const words = card.words.map((w) => ({ ...w, display: toDisplayText(w.text) }));
+    const lines = layoutCardLines(words.map((w) => w.display).join(' '));
 
-  // ─── Events (Dialogue) ────────────────────────────────────────
-  lines.push('[Events]');
-  lines.push('Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text');
+    // Map each layout line back to the word indexes it contains
+    const lineWords: number[][] = [];
+    let cursor = 0;
+    for (const line of lines) {
+      const count = line.split(' ').filter(Boolean).length;
+      lineWords.push(words.slice(cursor, cursor + count).map((_, k) => cursor + k));
+      cursor += count;
+    }
 
-  for (const seg of segments) {
-    const start = formatAssTime(seg.start);
-    const end = formatAssTime(seg.end);
-    const text = escapeAssText(seg.text);
-    lines.push(`Dialogue: 0,${start},${end},TikTok,,0,0,0,,${text}`);
+    // Highlight state k runs until word k+1 starts; the first state starts with the card
+    for (let k = 0; k < words.length; k++) {
+      const start = k === 0 ? card.start : words[k].start;
+      const end = k === words.length - 1 ? card.end : words[k + 1].start;
+      if (end <= start) continue;
+
+      lines.forEach((line, j) => {
+        const fontPx = fitFontSize(line) * scale;
+        const border = Math.max(2, Math.round(fontPx * SUBTITLE_STYLE.borderRatio));
+        const slotTop = height - bottomMargin - (lines.length - j) * lineHeight;
+        const y = Math.round(
+          slotTop
+          + (lineHeight - fontPx * SUBTITLE_STYLE.lineHeightRatio) / 2
+          - fontPx * SUBTITLE_STYLE.assTopOffsetRatio,
+        );
+        const text = lineWords[j]
+          .map((idx) => {
+            const word = escapeAssText(words[idx].display);
+            return idx === k ? `{\\c${highlight}}${word}{\\c${white}}` : word;
+          })
+          .join(' ');
+        const tags = `{\\an8\\pos(${Math.round(width / 2)},${y})\\fs${Math.round(fontPx * SUBTITLE_STYLE.assSizeRatio)}\\bord${border}}`;
+        out.push(`Dialogue: 0,${formatAssTime(start)},${formatAssTime(end)},Caption,,0,0,0,,${tags}${text}`);
+      });
+    }
   }
 
-  return lines.join('\n');
+  return out.join('\n') + '\n';
 }
 
-/**
- * Write an ASS subtitle file to disk from transcript segments.
- *
- * @param segments - Timed subtitle segments (already filtered & offset for the clip)
- * @param outputPath - Path where the .ass file should be written
- * @param width - Video width
- * @param height - Video height
- */
-export function writeAssFile(
-  segments: SubtitleSegment[],
+/** Write word-highlight captions for a clip to an .ass file. */
+export function writeHighlightAssFile(
+  cards: SubtitleCard[],
   outputPath: string,
   width: number = 1080,
   height: number = 1920,
 ): void {
-  const content = generateAssContent(segments, width, height);
-  fs.writeFileSync(outputPath, content, 'utf-8');
-  console.log(`[Subtitles] ASS file written: ${outputPath} (${segments.length} segments)`);
+  fs.writeFileSync(outputPath, generateHighlightAss(cards, width, height), 'utf-8');
+  console.log(`[Subtitles] ASS file written: ${outputPath} (${cards.length} cards)`);
 }
 
 /**
