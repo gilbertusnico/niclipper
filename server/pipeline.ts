@@ -6,6 +6,7 @@ import { getTranscriptForYouTube } from './subtitle-downloader.js';
 import { analyzeTranscript } from './analyzer.js';
 import { cropClips } from './cropper.js';
 import { renderFinalClips } from './renderer.js';
+import { runFfmpeg } from './ffmpeg.js';
 import type { ClipResult, ViralMoment, ProgressCallback } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -73,17 +74,34 @@ export async function runPipeline(
   console.log('[Pipeline] Stage 3: Analyzing transcript for viral moments...');
 
   let moments: ViralMoment[];
+  const tempDir = path.resolve(__dirname, '..', 'temp');
+  const audioPath = path.join(tempDir, 'analysis_audio.wav');
   try {
-    const tempDir = path.resolve(__dirname, '..', 'temp');
-    const audioPath = path.join(tempDir, 'audio.wav');
-    moments = await analyzeTranscript(transcript, videoPath, audioPath, (progress) => {
-      emitProgress('analyzing', progress);
+    // Fresh audio of THIS video for pause/energy detection. (temp/audio.wav only
+    // exists when Whisper ran, and may belong to a previous video.)
+    let analysisAudio: string | undefined;
+    try {
+      emitProgress('analyzing', 2, { detail: 'Extracting audio for analysis...' });
+      if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+      await runFfmpeg(
+        ['-i', videoPath, '-vn', '-ac', '1', '-ar', '8000', '-acodec', 'pcm_s16le', '-y', audioPath],
+        { timeout: 10 * 60 * 1000 },
+      );
+      analysisAudio = audioPath;
+    } catch (err) {
+      console.warn('[Pipeline] Audio extraction for analysis failed; analysing text only:', err instanceof Error ? err.message : err);
+    }
+
+    moments = await analyzeTranscript(transcript, videoPath, analysisAudio, (progress) => {
+      emitProgress('analyzing', Math.max(5, progress));
     });
     console.log(`[Pipeline] Found ${moments.length} viral moments`);
     emitProgress('analyzing', 100);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Analysis failed';
     throw new Error(`Analysis failed: ${msg}`);
+  } finally {
+    try { if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath); } catch { /* ignore */ }
   }
 
   if (moments.length === 0) {
