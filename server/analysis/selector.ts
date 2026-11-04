@@ -11,7 +11,7 @@ import {
   CLIP_MIN_SECONDS, CLIP_MAX_SECONDS, CLIP_IDEAL_SECONDS, CLIP_IDEAL_SPREAD,
   HOOK_WINDOW_SECONDS, PAYOFF_WINDOW_SECONDS, MIN_START_QUALITY, MIN_END_QUALITY,
   MIN_GAP_BETWEEN_CLIPS, MAX_KEYWORD_OVERLAP, MIN_RELATIVE_SCORE, WEIGHTS,
-  EDGE_ZONE_SECONDS, EDGE_ZONE_FRACTION,
+  EDGE_ZONE_SECONDS, EDGE_ZONE_FRACTION, MIN_ANSWER_SECONDS,
 } from './constants.js';
 
 interface Window {
@@ -95,6 +95,17 @@ export function scoreWindows(analysis: Analysis, relax = false): Window[] {
 
   // Opening / closing zones of the video: greetings, guest intro, thanks,
   // apologies, sign-off. Rarely the best clip, so overlapping them costs.
+  // Latest open question before each unit — a wh-question that asks for a
+  // story/explanation ("…siapa dan bagaimana ceritanya…?"), not a quick
+  // practical one ("bisa enggak buka?") — to catch clips that end while it is
+  // still being answered.
+  const lastQuestion = new Int32Array(n).fill(-1);
+  for (let k = 1; k < n; k++) {
+    const q = units[k - 1];
+    const open = q.text.trim().endsWith('?') && features[k - 1].question >= 1 && q.words.length >= 6;
+    lastQuestion[k] = open ? k - 1 : lastQuestion[k - 1];
+  }
+
   const zone = Math.min(EDGE_ZONE_SECONDS, analysis.totalDuration * EDGE_ZONE_FRACTION);
   const introEnd = analysis.totalDuration > 4 * zone ? zone : 0;
   const outroStart = analysis.totalDuration > 4 * zone ? analysis.totalDuration - zone : Infinity;
@@ -137,6 +148,10 @@ export function scoreWindows(analysis: Analysis, relax = false): Window[] {
       penalty += (sum(silentP, s, e) / duration) * 1.5;
       if (words / duration < 1.2) penalty += 0.3; // mostly music / silence
       const ws = units[s].start, we = units[e].end;
+      // "…bagaimana ceritanya bisa ada di tangan lu ini? | Jadi dia waktu itu…" [end]
+      // — the story is cut right after it starts.
+      const q = lastQuestion[e];
+      if (q >= s && units[q].start > ws + duration / 2 && we - units[q].end < MIN_ANSWER_SECONDS) penalty += 0.3;
       const edgeOverlap = Math.max(0, Math.min(we, introEnd) - ws) + Math.max(0, we - Math.max(ws, outroStart));
       if (edgeOverlap > 0) penalty += 0.15 + 0.5 * (edgeOverlap / duration);
 

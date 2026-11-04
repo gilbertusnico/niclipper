@@ -105,7 +105,7 @@ export async function runPipeline(
 
     moments = await analyzeTranscript(transcript, videoPath, analysisAudio, (progress) => {
       emitProgress('analyzing', Math.max(5, progress));
-    }, undefined, { title: sourceTitle, url });
+    }, undefined, { title: sourceTitle, url }, words);
     console.log(`[Pipeline] Found ${moments.length} viral moments`);
     emitProgress('analyzing', 100);
   } catch (err: unknown) {

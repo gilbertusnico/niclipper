@@ -22,6 +22,10 @@ export const PAYOFF_WINDOW_SECONDS = 8;
 /** Units whose start/end quality is below this are never used as clip edges. */
 export const MIN_START_QUALITY = 0.35;
 export const MIN_END_QUALITY = 0.35;
+/** A unit starting within this many seconds after a question is its answer, not a clip start. */
+export const QUESTION_LOOKBACK_SECONDS = 4;
+/** A question asked in the second half of a clip needs at least this much answer before the clip ends. */
+export const MIN_ANSWER_SECONDS = 12;
 
 export const WEIGHTS = {
   /** Average interest across the whole clip (most important: no boring middle). */

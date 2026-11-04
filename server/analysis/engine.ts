@@ -17,7 +17,8 @@
  */
 
 import type { AudioFeatures, ViralMoment, AnalysisProgressCallback } from './types.js';
-import { buildUnits, splitUnitsAtPauses } from './units.js';
+import { buildUnits, buildUnitsFromWords, splitUnitsAtPauses } from './units.js';
+import type { WordTiming } from '../subtitles.js';
 import { analyzeAudio } from './audio-analyzer.js';
 import { analyzeUnits } from './features.js';
 import { selectMoments } from './selector.js';
@@ -37,11 +38,15 @@ export async function analyzeTranscript(
   onProgress?: AnalysisProgressCallback,
   maxResults: number = DEFAULT_MAX_CLIPS,
   source: SourceInfo = {},
+  words?: WordTiming[],
 ): Promise<ViralMoment[]> {
   const progress = (p: number) => onProgress?.(p);
 
-  console.log('[Engine] Building speech units...');
-  let units = buildUnits(transcript);
+  // Real word timings (YouTube auto-captions) → one unit per sentence.
+  // Otherwise caption cues / Whisper chunks, re-cut at audio pauses below.
+  const fromWords = !!words && words.length > 0;
+  console.log(`[Engine] Building speech units (${fromWords ? 'sentences from word timing' : 'caption cues'})...`);
+  let units = fromWords ? buildUnitsFromWords(words) : buildUnits(transcript);
   console.log(`[Engine] ${units.length} units, ${units.length ? units[units.length - 1].end.toFixed(0) : 0}s of speech`);
   progress(15);
   if (units.length === 0) return [];
@@ -57,7 +62,7 @@ export async function analyzeTranscript(
   }
   progress(45);
 
-  if (audio) {
+  if (audio && !fromWords) {
     // Cut caption cues at the speaker's real pauses → clean sentence-level edges.
     const before = units.length;
     units = splitUnitsAtPauses(units, audio.silenceSegments);

@@ -13,8 +13,10 @@ import {
   LAUGHTER_TAGS, NON_SPEECH_TAGS, QUESTION_MARKERS, CONCLUSION_MARKERS, INTRO_MARKERS,
   OUTRO_MARKERS, CTA_MARKERS, SPONSOR_MARKERS, FILLER_WORDS, FILLER_PHRASES,
   CONTEXT_DEPENDENT_STARTS, SENTENCE_STARTERS, BAD_START_WORDS, BAD_END_WORDS,
-  NUMBER_WORDS, QUANTITY_UNITS, GENERIC_WORDS, REPLY_STARTS, CONTINUATION_STARTS,
+  NUMBER_WORDS, QUANTITY_UNITS, GENERIC_WORDS, REPLY_STARTS, CONTINUATION_STARTS, SHORT_FILLERS,
+  ANSWER_PARTICLES, HEDGE_WORDS, PRONOUN_STARTS,
 } from './lexicon.js';
+import { QUESTION_LOOKBACK_SECONDS } from './constants.js';
 
 export interface UnitFeatures {
   /** 0..1 how much this unit is about the video's main theme (title + recurring topic words). */
@@ -372,15 +374,31 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null, sourceT
     const first = u.words[0] ?? '';
     let q = before;
     if (BAD_START_WORDS.has(first)) q -= 0.35;
-    if (features[i].contextStart) q -= 0.3;
+    // Hard rule: never open on a back-reference ("Jadi akhirnya…", "tadi…", "makanya…").
+    if (features[i].contextStart) q = Math.min(q - 0.3, 0.3);
     if (features[i].fillerRatio > 0.25) q -= 0.2;
     if (features[i].nonSpeech) q -= 0.5;
     if (punctuated && i > 0 && !units[i - 1].terminal) q -= 0.3;
     // Starting on a reply ("iya kan…") or right after a question: the clip
     // should start AT the question instead.
     if (REPLY_STARTS.has(first)) q = Math.min(q, 0.3); // hard rule: never start on a reply
-    if (i > 0 && units[i].start - units[i - 1].end < 3 &&
-        (units[i - 1].text.trim().endsWith('?') || startsWithAny(units[i - 1].norm, QUESTION_MARKERS))) q -= 0.2;
+    // Hard rule: never start on the answer to a question asked just before —
+    // the clip should start AT the question ("Apa sifat Aries…?" | "Ekstrovert sih.").
+    for (let k = i - 1; k >= Math.max(0, i - 3) && u.start - units[k].end < QUESTION_LOOKBACK_SECONDS; k--) {
+      if (units[k].text.trim().endsWith('?') || (k === i - 1 && startsWithAny(units[k].norm, QUESTION_MARKERS))) {
+        q = Math.min(q, 0.3);
+        break;
+      }
+    }
+    // "Oke, oke." / "Nah." / "Iya." on its own is a reply or filler, not a hook.
+    if (u.words.length > 0 && u.words.length <= 2 && u.words.every((w) => REPLY_STARTS.has(w) || SHORT_FILLERS.has(w))) q -= 0.4;
+    // A short line carrying laughter ("[tertawa] Si Bubuy.") reacts to what came before.
+    if (u.words.length <= 4 && u.tags.some((t) => LAUGHTER_TAGS.some((l) => t.includes(l)))) q -= 0.4;
+    // A short answer fragment ("Gerd stres sih.") replies to something before.
+    if (u.words.length <= 3 && ANSWER_PARTICLES.has(u.words[u.words.length - 1] ?? '')) q -= 0.3;
+    // Opening on a pronoun ("Mungkin dia suka protes…") needs the earlier context.
+    const head = u.words.filter((w) => !HEDGE_WORDS.has(w)).slice(0, 1)[0] ?? '';
+    if (u.words.indexOf(head) <= 2 && PRONOUN_STARTS.has(head) && features[i].question < 0.5) q -= 0.25;
     return Math.max(0, Math.min(1, q));
   });
   const endQuality = units.map((u, i) => {
@@ -389,6 +407,19 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null, sourceT
     if (BAD_END_WORDS.has(last)) q -= 0.2; // already partly in breakAfter
     if (features[i].nonSpeech) q -= 0.3;
     if (punctuated && !u.terminal) q -= 0.5;
+    // Ending right after a short reaction ("Uh, lucu." / [tertawa]) lands the punchline.
+    const isReaction = (k: number) => units[k].words.length <= 6 && !units[k].text.trim().endsWith('?') &&
+      (features[k].reaction >= 0.5 || units[k].tags.some((t) => LAUGHTER_TAGS.some((l) => t.includes(l))));
+    if (isReaction(i) && breakAfter[i] >= 0.4) q = Math.max(q, 0.8);
+    // Never end on a question: the answer is the payoff.
+    if (u.text.trim().endsWith('?')) q = Math.min(q, 0.3);
+    // Don't cut right before the reaction: it IS the punchline.
+    for (let k = i + 1; k <= Math.min(n - 1, i + 2) && units[k].start - u.end < 3; k++) {
+      if (isReaction(k)) {
+        q = Math.min(q, 0.4);
+        break;
+      }
+    }
     return Math.max(0, Math.min(1, q));
   });
 

@@ -86,7 +86,7 @@ export const NON_SPEECH_TAGS = ['musik', 'music', 'lagu', 'suara', 'noise', 'tid
 export const QUESTION_MARKERS = [
   'kenapa', 'mengapa', 'gimana', 'bagaimana', 'apa sih', 'apakah', 'kok bisa', 'emang bisa',
   'kalian tau', 'kalian tahu', 'tau gak', 'tahu gak', 'tau nggak', 'tahu nggak',
-  'pernah gak', 'pernah nggak', 'pernahkah', 'tahukah', 'siapa yang', 'berapa', 'what',
+  'pernah gak', 'pernah nggak', 'pernahkah', 'tahukah', 'siapa yang', 'berapa', 'dari mana', 'what',
   'why', 'how',
 ];
 
@@ -161,7 +161,7 @@ export const CONTEXT_DEPENDENT_STARTS = [
   'tadi', 'yang tadi', 'kayak tadi', 'seperti tadi', 'yang barusan', 'barusan', 'balik lagi ke',
   'kembali ke', 'seperti yang', 'kayak yang gue bilang', 'kayak yang aku bilang', 'nah itu',
   'itu tuh', 'yang itu', 'yang kayak gitu', 'sama kayak', 'nah makanya', 'makanya',
-  'sebelumnya', 'lanjut', 'lanjutin',
+  'sebelumnya', 'lanjut', 'lanjutin', 'akhirnya', 'jadi akhirnya', 'terus akhirnya',
   // mid-story / mid-list continuations
   'ternyata', 'eh ternyata', 'akhirnya', 'terus akhirnya', 'abis itu', 'habis itu', 'setelah itu',
   'kedua', 'ketiga', 'keempat', 'kelima', 'yang kedua', 'yang ketiga', 'terakhir',
@@ -200,6 +200,18 @@ export const BAD_END_WORDS = new Set([
 
 /** Reply words: a clip starting with these is answering something we didn't hear. */
 export const REPLY_STARTS = new Set(['iya', 'ya', 'yaa', 'oh', 'ohh', 'ooh', 'hmm', 'he', 'yes', 'betul', 'bener', 'benar', 'nah iya']);
+
+/** A unit made only of these (≤2 words, e.g. "Oke, oke." / "Nah.") is filler, never a clip opener. */
+export const SHORT_FILLERS = new Set(['oke', 'ok', 'okay', 'nah', 'eh', 'em', 'mmm', 'sip', 'wah', 'wow', 'eee', 'ee']);
+
+/** Sentence-final particles that make a very short line an answer ("Gerd stres sih."). */
+export const ANSWER_PARTICLES = new Set(['sih', 'kok', 'kan', 'dong', 'deh', 'kali', 'tuh', 'nih', 'aja']);
+
+/** Hedges skipped when looking at how a line opens ("Mungkin oh dia…"). */
+export const HEDGE_WORDS = new Set(['mungkin', 'oh', 'eh', 'ya', 'nah', 'terus', 'jadi', 'kalau', 'kalo']);
+
+/** Opening on these points back at someone/something mentioned earlier. */
+export const PRONOUN_STARTS = new Set(['dia', 'mereka', 'beliau', 'itu', 'nya']);
 
 /** A next line starting with these continues the thought (contrast / twist). */
 export const CONTINUATION_STARTS = ['tapi', 'tetapi', 'namun', 'padahal', 'cuma', 'cuman', 'eh tapi', 'oke tapi', 'tapi kan', 'makanya', 'karena', 'soalnya'];
