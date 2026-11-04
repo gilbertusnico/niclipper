@@ -227,6 +227,48 @@ export function splitUnitsAtPauses(
   return out.filter((u) => u.end > u.start).map((u, index) => ({ ...u, index }));
 }
 
+/** A gap between two words at least this long ends a sentence unit. */
+const WORD_PAUSE_BREAK = 0.5;
+
+/**
+ * Build sentence-level units straight from word timings (YouTube json3
+ * auto-captions). Caption lines break mid-sentence and pause-splitting has to
+ * guess where words fall, which glued an answer onto the next question
+ * ("Ekstrovert sih. Oh emang Aries gitu?"). With real word times a unit is
+ * simply one sentence: it ends after . ! ? or at a pause between words, and
+ * long run-ons are cut at a comma (or anywhere) after MAX_UNIT_SECONDS.
+ */
+export function buildUnitsFromWords(input: { start: number; end: number; text: string }[]): Unit[] {
+  const words = [...input]
+    .map((w) => ({ ...w, text: w.text.trim() }))
+    .filter((w) => w.text)
+    .sort((a, b) => a.start - b.start);
+  // A caption line's last word "lasts" until the line ends; stop it at the next word.
+  for (let i = 0; i < words.length - 1; i++) {
+    words[i].end = Math.max(words[i].start + 0.05, Math.min(words[i].end, words[i + 1].start));
+  }
+
+  const out: Unit[] = [];
+  let cur: typeof words = [];
+  const flush = () => {
+    if (cur.length === 0) return;
+    out.push(makeUnit(out.length, cur[0].start, cur[cur.length - 1].end, cur.map((w) => w.text).join(' ')));
+    cur = [];
+  };
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    const next = words[i + 1];
+    cur.push(w);
+    if (!next) break;
+    const sentenceEnd = /[.!?…]["')\]]*$/.test(w.text);
+    const pause = next.start - w.end >= WORD_PAUSE_BREAK;
+    const long = w.end - cur[0].start >= MAX_UNIT_SECONDS && (/[,;:]$/.test(w.text) || w.end - cur[0].start >= MAX_UNIT_SECONDS * 1.5);
+    if (sentenceEnd || pause || long) flush();
+  }
+  flush();
+  return out.filter((u) => u.end > u.start);
+}
+
 export function buildUnits(transcript: string): Unit[] {
   const raw = parseRaw(transcript)
     .map((s) => {
