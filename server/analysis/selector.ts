@@ -6,10 +6,12 @@
 
 import type { Analysis } from './features.js';
 import type { ViralMoment } from './types.js';
+import { describeClip, type SourceInfo } from './describe.js';
 import {
   CLIP_MIN_SECONDS, CLIP_MAX_SECONDS, CLIP_IDEAL_SECONDS, CLIP_IDEAL_SPREAD,
   HOOK_WINDOW_SECONDS, PAYOFF_WINDOW_SECONDS, MIN_START_QUALITY, MIN_END_QUALITY,
   MIN_GAP_BETWEEN_CLIPS, MAX_KEYWORD_OVERLAP, MIN_RELATIVE_SCORE, WEIGHTS,
+  EDGE_ZONE_SECONDS, EDGE_ZONE_FRACTION,
 } from './constants.js';
 
 interface Window {
@@ -91,6 +93,12 @@ export function scoreWindows(analysis: Analysis, relax = false): Window[] {
     return b > e ? weightedMean(interest, e + 1, b, analysis) : 0;
   });
 
+  // Opening / closing zones of the video: greetings, guest intro, thanks,
+  // apologies, sign-off. Rarely the best clip, so overlapping them costs.
+  const zone = Math.min(EDGE_ZONE_SECONDS, analysis.totalDuration * EDGE_ZONE_FRACTION);
+  const introEnd = analysis.totalDuration > 4 * zone ? zone : 0;
+  const outroStart = analysis.totalDuration > 4 * zone ? analysis.totalDuration - zone : Infinity;
+
   const windows: Window[] = [];
   for (let s = 0; s < n; s++) {
     if (startQuality[s] < minStart) continue;
@@ -128,6 +136,9 @@ export function scoreWindows(analysis: Analysis, relax = false): Window[] {
       penalty += Math.max(0, fillerRatio - 0.05) * 3;
       penalty += (sum(silentP, s, e) / duration) * 1.5;
       if (words / duration < 1.2) penalty += 0.3; // mostly music / silence
+      const ws = units[s].start, we = units[e].end;
+      const edgeOverlap = Math.max(0, Math.min(we, introEnd) - ws) + Math.max(0, we - Math.max(ws, outroStart));
+      if (edgeOverlap > 0) penalty += 0.15 + 0.5 * (edgeOverlap / duration);
 
       const score =
         WEIGHTS.density * density +
@@ -219,7 +230,7 @@ function describe(analysis: Analysis, w: Window, keywords: Set<string>): { reaso
   return { reason: parts.join(' · ') || 'bagian paling padat isi', tags };
 }
 
-export function selectMoments(analysis: Analysis, maxResults: number): ViralMoment[] {
+export function selectMoments(analysis: Analysis, maxResults: number, source: SourceInfo = {}): ViralMoment[] {
   let windows = scoreWindows(analysis);
   if (windows.length < maxResults) windows = windows.concat(scoreWindows(analysis, true));
   windows.sort((a, b) => b.score - a.score);
@@ -247,11 +258,14 @@ export function selectMoments(analysis: Analysis, maxResults: number): ViralMome
     .map(({ w, kw }) => {
       const { start, end } = polishBoundaries(analysis, w.s, w.e);
       const { reason, tags } = describe(analysis, w, kw);
+      const { title, description } = describeClip(analysis, w.s, w.e, source);
       const pct = (x: number) => Math.round(Math.max(0, Math.min(1, x)) * 100);
       return {
         startTime: start,
         endTime: end,
         reason,
+        title,
+        description,
         retentionScore: {
           hook3s: pct(w.hook),
           maintain10s: pct(0.6 * w.density + 0.4 * w.peak),

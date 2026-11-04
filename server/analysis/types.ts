@@ -24,6 +24,10 @@ export interface ViralMoment {
   startTime: number;
   endTime: number;
   reason: string;
+  /** YouTube-ready title (extractive, from the clip's own words). */
+  title?: string;
+  /** YouTube-ready description (summary lines, source link, hashtags). */
+  description?: string;
   /** Sub-scores (0-100 each) shown in the UI. */
   retentionScore?: {
     hook3s: number;

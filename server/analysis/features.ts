@@ -13,10 +13,12 @@ import {
   LAUGHTER_TAGS, NON_SPEECH_TAGS, QUESTION_MARKERS, CONCLUSION_MARKERS, INTRO_MARKERS,
   OUTRO_MARKERS, CTA_MARKERS, SPONSOR_MARKERS, FILLER_WORDS, FILLER_PHRASES,
   CONTEXT_DEPENDENT_STARTS, SENTENCE_STARTERS, BAD_START_WORDS, BAD_END_WORDS,
-  NUMBER_WORDS, QUANTITY_UNITS,
+  NUMBER_WORDS, QUANTITY_UNITS, GENERIC_WORDS, REPLY_STARTS, CONTINUATION_STARTS,
 } from './lexicon.js';
 
 export interface UnitFeatures {
+  /** 0..1 how much this unit is about the video's main theme (title + recurring topic words). */
+  theme: number;
   story: number;
   /** Unit opens a story / claim / question (a natural first line). */
   opener: number;
@@ -57,6 +59,8 @@ export interface Analysis {
   /** endOk[i]: 0..1 how good unit i is as the last unit of a clip. */
   endQuality: number[];
   idf: Map<string, number>;
+  /** Document frequency (number of units) of each content word. */
+  df: Map<string, number>;
   silences: PauseSegment[];
   totalDuration: number;
 }
@@ -115,7 +119,40 @@ function silenceNear(silences: PauseSegment[], from: number, to: number): number
   return best;
 }
 
-export function analyzeUnits(units: Unit[], audio: AudioFeatures | null): Analysis {
+/**
+ * Very small, conservative Indonesian stemmer: enough to match
+ * "menghilang" ~ "hilang", "sebulan" ~ "bulan", "diminum" ~ "minum",
+ * "makanannya" ~ "makanan". A prefix is only removed when what remains still
+ * looks like a word start (consonant + vowel, or a vowel).
+ */
+export function stem(word: string): string {
+  let w = word.toLowerCase();
+  if (w.length <= 4) return w;
+  w = w.replace(/(nya|lah|kah|pun)$/, '');
+  const prefixes = ['meng', 'meny', 'mem', 'men', 'peng', 'pem', 'pen', 'ber', 'ter', 'di', 'ke', 'se', 'ng'];
+  const looksLikeStart = (r: string) => /^([aiueo]|[^aiueo][aiueo])/.test(r);
+  for (const p of prefixes) {
+    const rest = w.slice(p.length);
+    if (w.startsWith(p) && rest.length >= 4 && looksLikeStart(rest)) { w = rest; break; }
+  }
+  if (w.length >= 7) w = w.replace(/(kan|an)$/, '');
+  return w;
+}
+
+/** Same stem, or one edit apart for longer words (caption mishearings: "mengilang" ~ "hilang"). */
+function stemMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.length < 5 || b.length < 5 || Math.abs(a.length - b.length) > 1) return false;
+  let i = 0, j = 0, edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    if (++edits > 1) return false;
+    if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++; }
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1;
+}
+
+export function analyzeUnits(units: Unit[], audio: AudioFeatures | null, sourceTitle?: string): Analysis {
   const n = units.length;
   const totalDuration = n ? units[n - 1].end : 0;
   const silences = audio ? [...audio.silenceSegments].sort((a, b) => a.startTime - b.startTime) : [];
@@ -128,13 +165,49 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null): Analys
   for (const [w, d] of df) idf.set(w, Math.log((n + 1) / (d + 0.5)));
 
   // ── Raw per-unit signals ─────────────────────────────────────────
+  // Salience: specific words that RECUR in the video (real topic words: brand,
+  // place, person…). One-off rare words are mostly caption/recognition errors.
   const rawSalience = unitContent.map((cw, i) => {
     const total = units[i].words.length || 1;
-    if (cw.length === 0) return 0;
-    const meanIdf = cw.reduce((s, w) => s + (idf.get(w) ?? 0), 0) / cw.length;
-    return meanIdf * Math.sqrt(cw.length / total); // specific words AND not mostly chatter
+    const topical = cw.filter((w) => (df.get(w) ?? 0) >= 2);
+    if (topical.length === 0) return 0;
+    const meanIdf = topical.reduce((s, w) => s + (idf.get(w) ?? 0), 0) / topical.length;
+    return meanIdf * Math.sqrt(topical.length / total);
   });
   const salience = percentileRanks(rawSalience);
+
+  // ── Theme: what the video is about ───────────────────────────────
+  // (a) the creator's own title — the promise viewers clicked for;
+  // (b) topic words that recur across the video (the main conversation),
+  //     excluding words so common they carry no topic.
+  const titleStems = [...new Set(
+    contentWords((sourceTitle ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)).map(stem),
+  )];
+  const stemDf = new Map<string, number>();
+  for (const cw of unitContent) for (const s of new Set(cw.map(stem))) stemDf.set(s, (stemDf.get(s) ?? 0) + 1);
+  const themeStems = new Set(
+    [...stemDf.entries()]
+      .filter(([s, d]) => s.length >= 4 && d >= 3 && d <= Math.max(6, n * 0.12) && !GENERIC_WORDS.has(s))
+      .sort((x, y) => y[1] - x[1])
+      .slice(0, 20)
+      .map(([s]) => s),
+  );
+  const rawTheme = unitContent.map((cw) => {
+    if (cw.length === 0) return 0;
+    const stems = cw.map(stem);
+    const inTitle = stems.filter((s) => titleStems.some((t) => stemMatch(s, t))).length;
+    const inTheme = stems.filter((s) => themeStems.has(s)).length;
+    return Math.min(1, inTitle * 0.5) + Math.min(1, inTheme / Math.max(3, cw.length) * 2) * 0.6;
+  });
+  // Spread to neighbours: a unit right next to on-theme talk is on-theme too
+  // (people say "itu", "dia", "produknya" instead of repeating the topic word).
+  const theme = rawTheme.map((_, i) => {
+    let best = rawTheme[i];
+    for (let k = Math.max(0, i - 6); k <= Math.min(n - 1, i + 6); k++) {
+      if (Math.abs(units[k].start - units[i].start) <= 20) best = Math.max(best, rawTheme[k] * 0.7);
+    }
+    return Math.min(1, best);
+  });
 
   const paceRaw = units.map((u) => u.words.length / Math.max(0.5, u.end - u.start));
   const pace = percentileRanks(paceRaw);
@@ -155,9 +228,13 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null): Analys
     const laughter = LAUGHTER_TAGS.some((t) => tagText.includes(t)) ? 1 : 0;
     const nonSpeech = u.words.length === 0 || (NON_SPEECH_TAGS.some((t) => tagText.includes(t)) && u.words.length < 3);
     const question = Math.min(1, countPhrases(norm, QUESTION_MARKERS) * 0.5 + (u.text.includes('?') ? 0.6 : 0));
+    // Recognition loops ("luang-luang-luang…", the same phrase 20×) carry no content.
+    const tokens = u.text.toLowerCase().split(/[\s-]+/).filter(Boolean);
+    const repetitive = tokens.length >= 8 && new Set(tokens).size / tokens.length < 0.35;
 
     const opensWith = (list: readonly string[]) => startsWithAny(norm, list) || startsWithAny(` ${u.words.slice(1).join(' ')} `, list);
     const f: UnitFeatures = {
+      theme: theme[i],
       story: Math.min(1, countPhrases(norm, STORY_MARKERS) * 0.6),
       opener: opensWith(STORY_OPENERS) || opensWith(OPINION_MARKERS) || opensWith(QUESTION_MARKERS) ||
         opensWith(['nah kalau', 'nah kalo', 'kalau kalian', 'kalo kalian', 'ada tiga', 'ada dua', 'ada lima', 'caranya'])
@@ -184,16 +261,18 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null): Analys
 
     const hasAudio = f.energy !== null;
     let interest =
-      0.26 * f.salience +
+      0.16 * f.theme +
+      0.12 * f.salience +
       0.12 * f.specificity +
-      0.14 * f.story +
-      0.16 * f.opinion +
+      0.16 * f.story +
+      0.18 * f.opinion +
       0.12 * f.insight +
-      0.14 * f.reaction +
+      0.16 * f.reaction +
       0.08 * f.question +
       (hasAudio ? 0.14 * (f.energy as number) + 0.04 * f.pace : 0.10 * f.pace);
     interest -= Math.min(0.3, f.fillerRatio * 2.5);
     if (f.nonSpeech) interest = 0;
+    if (repetitive) interest *= 0.25;
     f.interest = Math.max(0, Math.min(1, interest / 0.6));
     return f;
   });
@@ -217,6 +296,10 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null): Analys
         startsWithAny(next.norm, OPINION_MARKERS) || startsWithAny(next.norm, QUESTION_MARKERS)) s += 0.2;
     if (BAD_END_WORDS.has(lastWord)) s -= 0.55;
     if (BAD_START_WORDS.has(nextFirst)) s -= 0.3;
+    // "…bukan minuman diet. | Oke tapi membantu…" — the thought continues.
+    const nextHead = ` ${next.words.slice(0, 3).join(' ')} `;
+    // Hard rule: never end right before "tapi / padahal / cuma …" (the thought continues).
+    if (CONTINUATION_STARTS.some((c) => nextHead.includes(` ${c} `))) s = Math.min(s, 0.3);
     return Math.max(0, Math.min(1, s));
   });
 
@@ -293,6 +376,11 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null): Analys
     if (features[i].fillerRatio > 0.25) q -= 0.2;
     if (features[i].nonSpeech) q -= 0.5;
     if (punctuated && i > 0 && !units[i - 1].terminal) q -= 0.3;
+    // Starting on a reply ("iya kan…") or right after a question: the clip
+    // should start AT the question instead.
+    if (REPLY_STARTS.has(first)) q = Math.min(q, 0.3); // hard rule: never start on a reply
+    if (i > 0 && units[i].start - units[i - 1].end < 3 &&
+        (units[i - 1].text.trim().endsWith('?') || startsWithAny(units[i - 1].norm, QUESTION_MARKERS))) q -= 0.2;
     return Math.max(0, Math.min(1, q));
   });
   const endQuality = units.map((u, i) => {
@@ -300,9 +388,9 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null): Analys
     let q = breakAfter[i];
     if (BAD_END_WORDS.has(last)) q -= 0.2; // already partly in breakAfter
     if (features[i].nonSpeech) q -= 0.3;
-    if (punctuated && !u.terminal) q -= 0.35;
+    if (punctuated && !u.terminal) q -= 0.5;
     return Math.max(0, Math.min(1, q));
   });
 
-  return { units, features, breakAfter, topicAfter, startQuality, endQuality, idf, silences, totalDuration };
+  return { units, features, breakAfter, topicAfter, startQuality, endQuality, idf, df, silences, totalDuration };
 }

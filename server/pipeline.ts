@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { downloadVideo } from './downloader.js';
+import { downloadVideo, getVideoInfo } from './downloader.js';
 import { getTranscriptForYouTube } from './subtitle-downloader.js';
 import { analyzeTranscript } from './analyzer.js';
 import { cropClips } from './cropper.js';
@@ -95,9 +95,17 @@ export async function runPipeline(
       console.warn('[Pipeline] Audio extraction for analysis failed; analysing text only:', err instanceof Error ? err.message : err);
     }
 
+    // Source title for the clips' YouTube title/description (best effort).
+    let sourceTitle: string | undefined;
+    try {
+      sourceTitle = (await getVideoInfo(url)).title?.trim() || undefined;
+    } catch {
+      // not critical
+    }
+
     moments = await analyzeTranscript(transcript, videoPath, analysisAudio, (progress) => {
       emitProgress('analyzing', Math.max(5, progress));
-    });
+    }, undefined, { title: sourceTitle, url });
     console.log(`[Pipeline] Found ${moments.length} viral moments`);
     emitProgress('analyzing', 100);
   } catch (err: unknown) {

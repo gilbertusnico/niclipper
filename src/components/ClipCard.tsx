@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Download, FolderOpen, Clock, Timer, Brain, Target, Sparkles, BarChart3, Play, Volume2, VolumeX, Pencil, Loader2, Check, X, FileText } from 'lucide-react';
+import { Download, FolderOpen, Clock, Timer, Target, BarChart3, Play, Volume2, VolumeX, Pencil, Loader2, Check, X, FileText, Copy, Sparkles } from 'lucide-react';
 
 interface TranscriptSegment {
   start: number;
@@ -14,6 +14,8 @@ interface ClipData {
   startTime: number;
   endTime: number;
   reason?: string;
+  title?: string;
+  description?: string;
   finalScore?: number;
   retentionScore?: {
     hook3s: number;
@@ -37,6 +39,35 @@ function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Fallback for non-secure contexts
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      aria-label={`Copy ${label}`}
+      className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium text-foreground/50 hover:text-accent hover:bg-accent/10 transition-colors"
+    >
+      {copied ? <Check className="w-3 h-3" aria-hidden="true" /> : <Copy className="w-3 h-3" aria-hidden="true" />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
 }
 
 export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardProps) {
@@ -322,10 +353,30 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
           </span>
         </div>
 
-        {clip.reason && (
-          <div className="flex items-start gap-2 text-xs">
-            <Brain className="w-3.5 h-3.5 mt-0.5 text-accent shrink-0" aria-hidden="true" />
-            <p className="text-foreground/60 leading-relaxed">{clip.reason}</p>
+        {(clip.title || clip.description) && (
+          <div className="space-y-2 rounded-lg border border-border bg-muted/40 p-2.5">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/40">
+              <Sparkles className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+              YouTube
+            </div>
+            {clip.title && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-medium text-foreground/50">Title</span>
+                  <CopyButton text={clip.title} label="title" />
+                </div>
+                <p className="text-xs font-semibold text-foreground/90 leading-snug break-words">{clip.title}</p>
+              </div>
+            )}
+            {clip.description && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-medium text-foreground/50">Description</span>
+                  <CopyButton text={clip.description} label="description" />
+                </div>
+                <p className="text-xs text-foreground/60 leading-relaxed whitespace-pre-line break-words">{clip.description}</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -347,20 +398,6 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
           </div>
         )}
 
-        {clip.narrativeStages && clip.narrativeStages.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Sparkles className="w-3 h-3 text-accent" aria-hidden="true" />
-            {clip.narrativeStages.map((stage, i) => (
-              <span
-                key={i}
-                className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-accent/10 text-accent/80"
-              >
-                {stage}
-              </span>
-            ))}
-          </div>
-        )}
-
         {clip.retentionScore && (
           <div className="space-y-1.5">
             <div className="flex items-center gap-1.5">
@@ -375,7 +412,7 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
               ].map(({ label, value }) => (
                 <div key={label} className="text-center">
                   <span className="block text-xs font-semibold text-foreground/70">
-                    {(value * 100).toFixed(0)}%
+                    {Math.round(value)}%
                   </span>
                   <span className="block text-[10px] text-foreground/40 truncate">{label}</span>
                 </div>

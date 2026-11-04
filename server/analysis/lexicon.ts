@@ -73,7 +73,7 @@ export const REACTION_MARKERS = [
   'gila', 'gilak', 'anjir', 'anjay', 'anjrit', 'astaga', 'astagfirullah', 'ya ampun',
   'ya allah', 'parah', 'parah banget', 'kaget', 'syok', 'shock', 'nangis', 'takut', 'serem',
   'ngeri', 'sedih', 'kesel', 'marah', 'malu', 'bangga', 'seneng banget', 'senang sekali',
-  'wkwk', 'wkwkwk', 'haha', 'hahaha', 'hehe', 'ngakak', 'lucu', 'kocak', 'gokil', 'sumpah',
+  'wkwk', 'wkwkwk', 'haha', 'hahaha', 'hahahaha', 'ha ha', 'hehe', 'ngakak', 'lucu', 'kocak', 'gokil', 'sumpah',
   'serius', 'beneran', 'demi apa', 'gak nyangka', 'nggak nyangka', 'tidak menyangka',
   'luar biasa', 'mantap', 'keren banget', 'wow', 'amazing', 'crazy', 'insane',
 ];
@@ -105,14 +105,18 @@ export const INTRO_MARKERS = [
   'selamat datang', 'welcome', 'balik lagi', 'kembali lagi', 'jumpa lagi', 'ketemu lagi',
   'assalamualaikum', 'selamat pagi', 'selamat siang', 'selamat sore', 'selamat malam',
   'di episode', 'episode kali ini', 'di video kali ini', 'di video ini', 'podcast kali ini',
-  'bintang tamu', 'tamu kita', 'kenalin', 'perkenalkan', 'apa kabar',
+  'bintang tamu', 'tamu kita', 'kenalin', 'perkenalkan', 'apa kabar', 'hari ini kita ngobrol',
+  'kita ngobrol bareng', 'ngobrol bareng', 'ngobrol bersama', 'ngobrol sama', 'udah dateng',
+  'sudah datang', 'makasih udah dateng', 'terima kasih sudah datang', 'terima kasih udah dateng',
 ];
 
 /** Outro / sign-off. */
 export const OUTRO_MARKERS = [
   'sampai jumpa', 'sampai ketemu', 'see you', 'terima kasih sudah', 'makasih udah',
   'terima kasih udah', 'thanks for watching', 'sekian', 'segitu dulu', 'byebye', 'bye bye',
-  'wassalamualaikum', 'episode selanjutnya', 'video selanjutnya', 'next episode',
+  'wassalamualaikum', 'episode selanjutnya', 'video selanjutnya', 'next episode', 'terima kasih banget',
+  'makasih banget', 'terima kasih ya', 'makasih ya', 'salah kata', 'salah salah kata', 'minta maaf kalau',
+  'mohon maaf kalau', 'sukses terus', 'tetap enjoy', 'sampai ketemu lagi',
 ];
 
 /** Calls to action. */
@@ -129,6 +133,22 @@ export const SPONSOR_MARKERS = [
   'promo code', 'pakai kode', 'gunakan kode', 'download aplikasinya', 'download sekarang',
   'diskon', 'cashback', 'partner kita', 'kerja sama dengan', 'paid promote',
 ];
+
+/**
+ * Common conversational words (already stemmed) that recur in ANY talk and so
+ * say nothing about what this particular video is about.
+ */
+export const GENERIC_WORDS = new Set([
+  'suka', 'hari', 'misal', 'misalnya', 'kasih', 'rasa', 'bilang', 'macam', 'segala', 'satu', 'bukan',
+  'biasa', 'akhir', 'langsung', 'baru', 'dulu', 'benar', 'betul', 'mulai', 'masa', 'lain', 'sama',
+  'kali', 'pakai', 'pake', 'ambil', 'lihat', 'liat', 'kata', 'ngomong', 'omong', 'cerita', 'orang',
+  'tadi', 'pernah', 'sendiri', 'kayaknya', 'gitu', 'banget', 'lagi', 'juga', 'terus', 'jadi', 'emang',
+  'tahu', 'mikir', 'pikir', 'pengen', 'ingin', 'butuh', 'dateng', 'datang', 'pulang', 'pergi', 'buat',
+  'bikin', 'kerja', 'waktu', 'tahun', 'bulan', 'minggu', 'malam', 'pagi', 'siang', 'sore', 'besok',
+  'kemarin', 'sekarang', 'nanti', 'tiga', 'empat', 'lima', 'puluh', 'ratus', 'ribu', 'banyak', 'sedikit',
+  'dikit', 'besar', 'kecil', 'bagus', 'enak', 'oke', 'okay', 'mana', 'gimana', 'kenapa', 'tanya',
+  'jawab', 'temen', 'teman', 'keluarga', 'video', 'kamera', 'channel', 'konten', 'podcast', 'iya',
+]);
 
 /** Fillers (high density = rambling). */
 export const FILLER_WORDS = new Set([
@@ -171,8 +191,18 @@ export const BAD_END_WORDS = new Set([
   'kalau', 'kalo', 'tapi', 'tetapi', 'terus', 'trus', 'lalu', 'sama', 'dengan', 'adalah',
   'akan', 'bisa', 'mau', 'jadi', 'itu', 'ini', 'si', 'para', 'pas', 'saat', 'waktu',
   'kayak', 'seperti', 'yaitu', 'bahwa', 'sih', 'tuh', 'gue', 'aku', 'saya', 'kita', 'the',
-  'a', 'and', 'to', 'of', 'but', 'because', 'eh', 'em', 'ee', 'apa',
+  'a', 'and', 'to', 'of', 'but', 'because', 'eh', 'em', 'ee', 'apa', 'pada', 'dalam', 'tentang',
+  'oleh', 'bagi', 'agar', 'supaya', 'sehingga', 'ketika', 'jika', 'walaupun', 'meskipun', 'sambil',
+  'tanpa', 'sejak', 'hingga', 'sampai', 'sampe', 'antara', 'terhadap', 'tiap', 'setiap', 'sangat',
+  'paling', 'lebih', 'udah', 'sudah', 'belum', 'masih', 'lagi', 'mulai', 'harus', 'perlu', 'ingin',
+  'pengen', 'gak', 'nggak', 'tidak', 'bukan', 'jangan', 'cuma', 'cuman', 'hanya', 'nya',
 ]);
+
+/** Reply words: a clip starting with these is answering something we didn't hear. */
+export const REPLY_STARTS = new Set(['iya', 'ya', 'yaa', 'oh', 'ohh', 'ooh', 'hmm', 'he', 'yes', 'betul', 'bener', 'benar', 'nah iya']);
+
+/** A next line starting with these continues the thought (contrast / twist). */
+export const CONTINUATION_STARTS = ['tapi', 'tetapi', 'namun', 'padahal', 'cuma', 'cuman', 'eh tapi', 'oke tapi', 'tapi kan', 'makanya', 'karena', 'soalnya'];
 
 /** Spelled-out numbers / quantities (specificity). */
 export const NUMBER_WORDS = new Set([
