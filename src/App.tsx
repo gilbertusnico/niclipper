@@ -332,7 +332,7 @@ export default function App() {
 
   const isDone = currentStage === 'done';
 
-  const stageLabel = mode === 'ai' ? 'Paste a YouTube URL and get 3 AI-curated short clips'
+  const stageLabel = mode === 'ai' ? 'Paste a YouTube URL and get 5 AI-curated short clips'
     : mode === 'manual' ? 'Paste a YouTube URL and choose your own time ranges to crop'
     : 'Upload a local video file and crop specific time ranges';
 
@@ -509,7 +509,7 @@ export default function App() {
                 </h2>
                 <p className="text-sm text-foreground/40 mt-1 max-w-md mx-auto">
                   {mode === 'ai'
-                    ? 'Paste a YouTube URL above and click "Generate Clips" to create 3 AI-curated short clips — perfect for TikTok, Reels, and Shorts.'
+                    ? 'Paste a YouTube URL above and click "Generate Clips" to create 5 AI-curated short clips — perfect for TikTok, Reels, and Shorts.'
                     : mode === 'manual'
                     ? 'Paste a YouTube URL above, set your desired start and end times, and crop exactly the moments you want.'
                     : 'Upload a video file from your computer, set the time ranges, and crop clips instantly.'
