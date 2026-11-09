@@ -14,7 +14,7 @@ export const CLIP_IDEAL_SPREAD = 22;
 export const EDGE_ZONE_SECONDS = 90;
 export const EDGE_ZONE_FRACTION = 0.05;
 /** How many clips AI mode returns. */
-export const DEFAULT_MAX_CLIPS = 3;
+export const DEFAULT_MAX_CLIPS = 5;
 
 // ─── Window scoring ──────────────────────────────────────────────────────
 export const HOOK_WINDOW_SECONDS = 7;
@@ -52,7 +52,7 @@ export const MIN_GAP_BETWEEN_CLIPS = 5;
 /** Max keyword Jaccard overlap between two selected clips. */
 export const MAX_KEYWORD_OVERLAP = 0.45;
 /** Extra clips must score at least this fraction of the best clip's score. */
-export const MIN_RELATIVE_SCORE = 0.6;
+export const MIN_RELATIVE_SCORE = 0.45;
 
 // ─── Audio analysis ──────────────────────────────────────────────────────
 export const AUDIO_FRAME_MS = 50;
