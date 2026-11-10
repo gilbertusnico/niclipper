@@ -273,13 +273,14 @@ export function selectMoments(analysis: Analysis, maxResults: number, source: So
     .map(({ w, kw }) => {
       const { start, end } = polishBoundaries(analysis, w.s, w.e);
       const { reason, tags } = describe(analysis, w, kw);
-      const { title, description } = describeClip(analysis, w.s, w.e, source);
+      const { title, hook, description } = describeClip(analysis, w.s, w.e, source);
       const pct = (x: number) => Math.round(Math.max(0, Math.min(1, x)) * 100);
       return {
         startTime: start,
         endTime: end,
         reason,
         title,
+        ...(hook ? { hook } : {}),
         description,
         retentionScore: {
           hook3s: pct(w.hook),

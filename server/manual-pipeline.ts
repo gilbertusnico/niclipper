@@ -19,6 +19,10 @@ export interface TimeRange {
   start: number; // in seconds
   end: number;   // in seconds
   title?: string;
+  /** Carried over from AI mode so a re-render keeps them. */
+  description?: string;
+  /** Hook text burned in at the start of the clip. */
+  hook?: string;
 }
 
 /**
@@ -95,6 +99,8 @@ export async function runManualPipeline(
     endTime: r.end,
     reason: `Manual clip ${i + 1} (${formatTime(r.start)} — ${formatTime(r.end)})`,
     ...(r.title ? { title: r.title } : {}),
+    ...(r.description ? { description: r.description } : {}),
+    ...(r.hook ? { hook: r.hook } : {}),
   }));
 
   // ── Stage 3: Crop ──────────────────────────────────────────────────
@@ -113,7 +119,7 @@ export async function runManualPipeline(
       const cropped = await cropClips(videoPath, moment, i + 1, (subProgress) => {
         const overall = Math.round(((i + subProgress / 100) / totalMoments) * 100);
         emitProgress('cropping', overall, { clip: i + 1 });
-      }, resolvedTranscript, words);
+      }, resolvedTranscript, words, { hook: moment.hook });
       croppedFiles.push(cropped);
     }
     emitProgress('cropping', 100);

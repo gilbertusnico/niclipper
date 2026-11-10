@@ -232,6 +232,8 @@ app.get('/api/crop-local', async (req, res) => {
 app.get('/api/generate', async (req, res) => {
   const url = req.query.url as string | undefined;
   const subtitles = req.query.subtitles as string | undefined;
+  // Big hook text at the start of each clip; on unless ?hook=0
+  const hookText = req.query.hook !== '0';
 
   // Validate URL
   if (!url || typeof url !== 'string') {
@@ -272,7 +274,7 @@ app.get('/api/generate', async (req, res) => {
       if (!aborted) {
         sendEvent(stage, progress, extra);
       }
-    }, (subtitles as 'auto' | 'none' | 'manual') || 'auto');
+    }, (subtitles as 'auto' | 'none' | 'manual') || 'auto', hookText);
 
     if (!aborted) {
       sendEvent('done', 100, { clips });
@@ -410,7 +412,7 @@ app.post('/api/rerender-subtitles', express.json({ limit: '5mb' }), async (req, 
   const { url, fileId, ranges: rangesBody, transcript } = req.body as {
     url?: string;
     fileId?: string;
-    ranges?: { start: number; end: number; title?: string }[];
+    ranges?: { start: number; end: number; title?: string; description?: string; hook?: string }[];
     transcript?: string;
   };
 
@@ -458,7 +460,9 @@ app.post('/api/rerender-subtitles', express.json({ limit: '5mb' }), async (req, 
         throw new Error(`Range ${i} has invalid values`);
       }
       const title = 'title' in r && typeof r.title === 'string' ? r.title : undefined;
-      return { start, end, ...(title ? { title } : {}) };
+      const description = typeof r.description === 'string' ? r.description : undefined;
+      const hook = typeof r.hook === 'string' ? r.hook.slice(0, 120) : undefined;
+      return { start, end, ...(title ? { title } : {}), ...(description ? { description } : {}), ...(hook ? { hook } : {}) };
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Invalid ranges';

@@ -16,6 +16,9 @@ export interface TimeRange {
   start: number;
   end: number;
   title?: string;
+  description?: string;
+  /** Hook text burned in at the start of the clip. */
+  hook?: string;
 }
 
 /**
@@ -74,6 +77,8 @@ export async function runLocalFilePipeline(
     endTime: r.end,
     reason: `Local clip ${i + 1} (${formatTime(r.start)} — ${formatTime(r.end)})`,
     ...(r.title ? { title: r.title } : {}),
+    ...(r.description ? { description: r.description } : {}),
+    ...(r.hook ? { hook: r.hook } : {}),
   }));
 
   const totalMoments = moments.length;
@@ -88,7 +93,7 @@ export async function runLocalFilePipeline(
       const cropped = await cropClips(filePath, moment, i + 1, (subProgress) => {
         const overall = Math.round(((i + subProgress / 100) / totalMoments) * 100);
         emitProgress('cropping', overall, { clip: i + 1 });
-      }, resolvedTranscript);
+      }, resolvedTranscript, undefined, { hook: moment.hook });
       croppedFiles.push(cropped);
     }
     emitProgress('cropping', 100);

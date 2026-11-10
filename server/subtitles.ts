@@ -372,7 +372,7 @@ export function buildCardsForClip(
 }
 
 /** Format seconds to ASS time: H:MM:SS.cc */
-function formatAssTime(seconds: number): string {
+export function formatAssTime(seconds: number): string {
   const totalCs = Math.max(0, Math.round(seconds * 100));
   const h = Math.floor(totalCs / 360000);
   const m = Math.floor((totalCs % 360000) / 6000);
@@ -382,12 +382,12 @@ function formatAssTime(seconds: number): string {
 }
 
 /** Make speech text safe inside an ASS Dialogue line ({} start override tags). */
-function escapeAssText(text: string): string {
+export function escapeAssText(text: string): string {
   return text.replace(/\\/g, '/').replace(/\{/g, '(').replace(/\}/g, ')');
 }
 
 /** "#RRGGBB" → ASS inline colour "&HBBGGRR&" */
-function toAssColor(hex: string): string {
+export function toAssColor(hex: string): string {
   const [r, g, b] = [hex.slice(1, 3), hex.slice(3, 5), hex.slice(5, 7)];
   return `&H${b}${g}${r}&`.toUpperCase();
 }
