@@ -15,6 +15,7 @@ interface ClipData {
   endTime: number;
   reason?: string;
   title?: string;
+  hook?: string;
   description?: string;
   finalScore?: number;
   retentionScore?: {
@@ -33,6 +34,31 @@ interface ClipCardProps {
   clip: ClipData;
   onRerender?: (transcript: string) => void;
   isProcessing?: boolean;
+  /** Channel hashtags merged into the description's hashtag line. */
+  channelHashtags?: string[];
+}
+
+/**
+ * Put the channel hashtags into the description's hashtag line (its last
+ * line): clip tags first, channel tags next, #shorts last, no duplicates.
+ */
+function withChannelHashtags(description: string, channelTags: string[]): string {
+  if (channelTags.length === 0) return description;
+  const lines = description.split('\n');
+  const last = lines[lines.length - 1]?.trim() ?? '';
+  const isTagLine = last.length > 0 && last.split(/\s+/).every((t) => t.startsWith('#'));
+  const clipTags = isTagLine ? last.split(/\s+/) : [];
+  const body = isTagLine ? lines.slice(0, -1) : [...lines, ''];
+  const shorts = clipTags.filter((t) => t.toLowerCase() === '#shorts');
+  const seen = new Set<string>();
+  const tags = [...clipTags.filter((t) => t.toLowerCase() !== '#shorts'), ...channelTags, ...shorts]
+    .filter((t) => {
+      const k = t.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  return [...body, tags.join(' ')].join('\n');
 }
 
 function formatTime(seconds: number): string {
@@ -70,7 +96,8 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
-export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardProps) {
+export default function ClipCard({ clip, onRerender, isProcessing, channelHashtags = [] }: ClipCardProps) {
+  const description = clip.description ? withChannelHashtags(clip.description, channelHashtags) : '';
   const [previewOpen, setPreviewOpen] = useState(false);
   const [muted, setMuted] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -353,7 +380,7 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
           </span>
         </div>
 
-        {(clip.title || clip.description) && (
+        {(clip.title || clip.hook || description) && (
           <div className="space-y-2 rounded-lg border border-border bg-muted/40 p-2.5">
             <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/40">
               <Sparkles className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
@@ -368,13 +395,22 @@ export default function ClipCard({ clip, onRerender, isProcessing }: ClipCardPro
                 <p className="text-xs font-semibold text-foreground/90 leading-snug break-words">{clip.title}</p>
               </div>
             )}
-            {clip.description && (
+            {clip.hook && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-medium text-foreground/50">Hook text</span>
+                  <CopyButton text={clip.hook} label="hook text" />
+                </div>
+                <p className="text-xs font-semibold text-foreground/80 leading-snug break-words">{clip.hook}</p>
+              </div>
+            )}
+            {description && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-medium text-foreground/50">Description</span>
-                  <CopyButton text={clip.description} label="description" />
+                  <CopyButton text={description} label="description" />
                 </div>
-                <p className="text-xs text-foreground/60 leading-relaxed whitespace-pre-line break-words">{clip.description}</p>
+                <p className="text-xs text-foreground/60 leading-relaxed whitespace-pre-line break-words">{description}</p>
               </div>
             )}
           </div>

@@ -24,11 +24,13 @@ export type { ClipResult, ViralMoment, ProgressCallback };
  * 5. Render final clips
  *
  * @param subtitles - 'auto' (default, whisper transcribes), 'none' (skip), 'manual' (use provided)
+ * @param hookText - burn each clip's hook line in big at the start (default on)
  */
 export async function runPipeline(
   url: string,
   emitProgress: ProgressCallback,
   subtitles: 'auto' | 'none' | 'manual' = 'auto',
+  hookText: boolean = true,
 ): Promise<ClipResult[]> {
   // ── Stage 1: Download ──────────────────────────────────────────────
   emitProgress('downloading', 0);
@@ -135,7 +137,7 @@ export async function runPipeline(
       const cropped = await cropClips(videoPath, moment, i + 1, (subProgress) => {
         const overall = Math.round(((i + subProgress / 100) / totalMoments) * 100);
         emitProgress('cropping', overall, { clip: i + 1 });
-      }, subtitleTranscript, words);
+      }, subtitleTranscript, words, { hook: hookText ? moment.hook : undefined });
       croppedFiles.push(cropped);
 
       console.log(`[Pipeline] Cropped clip ${i + 1}: ${moment.startTime}s - ${moment.endTime}s`);

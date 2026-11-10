@@ -12,6 +12,7 @@ import {
   layoutCardLines,
   fitFontSize,
 } from './subtitle-style.js';
+import { generateHookAss, buildHookDrawText } from './hook-overlay.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,6 +41,7 @@ interface VideoDimensions {
  * @param transcript - Optional full transcript string to burn subtitles
  * @param words - Optional per-word timings (absolute seconds) for the yellow
  *                highlight; estimated from the transcript when missing
+ * @param options.hook - Hook line burned in big at the start (see hook-overlay.ts)
  * @returns Path to the cropped temp file
  */
 export async function cropClips(
@@ -49,6 +51,7 @@ export async function cropClips(
   onProgress: CropProgressCallback,
   transcript?: string,
   words?: WordTiming[],
+  options: { hook?: string } = {},
 ): Promise<string> {
   // Ensure temp directory exists
   if (!fs.existsSync(tempDir)) {
@@ -127,6 +130,34 @@ export async function cropClips(
     }
   }
 
+  // ── Hook text (big, first ~3.5 s, top of the frame) ───────────
+  let hookOverlay: string | null = null;
+  const hook = options.hook?.trim();
+  if (hook) {
+    try {
+      if (hasFfmpegFilter('ass')) {
+        const content = generateHookAss(hook, duration, 1080, 1920);
+        if (content) {
+          const assPath = path.join(tempDir, `hook_${clipIndex}.ass`);
+          fs.writeFileSync(assPath, content, 'utf-8');
+          subtitleTextFiles.push(assPath);
+          const fontFile = getSubtitleFontPath();
+          hookOverlay = `ass=filename=${quoteFilterValue(assPath)}`
+            + (fontFile ? `:fontsdir=${quoteFilterValue(path.dirname(fontFile))}` : '');
+        }
+      } else if (hasFfmpegFilter('drawtext')) {
+        const built = buildHookDrawText(hook, duration, 1080, 1920, getSubtitleFontPath(), tempDir, clipIndex);
+        if (built) {
+          hookOverlay = built.filter;
+          subtitleTextFiles.push(...built.files);
+        }
+      }
+      if (hookOverlay) console.log(`[Cropper] Hook text for clip ${clipIndex}: "${hook}"`);
+    } catch (err) {
+      console.warn(`[Cropper] Failed to build hook text for clip ${clipIndex}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
   // Build raw ffmpeg args:
   // ffmpeg -ss <start> -i <input> -t <duration> -c:v libx264 -c:a aac
   //        -vf "crop=...:...,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[,ass=file.ass]"
@@ -140,6 +171,10 @@ export async function cropClips(
   // Text overlay goes after the video is at 1080x1920 (the ASS PlayRes).
   if (subtitleOverlay) {
     vfParts.push(subtitleOverlay);
+  }
+  // Hook last, so it is drawn on top of the captions.
+  if (hookOverlay) {
+    vfParts.push(hookOverlay);
   }
 
   const vf = vfParts.join(',');

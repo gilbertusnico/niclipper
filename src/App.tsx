@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { Scissors, AlertCircle, Wand2, Clock, FolderOpen } from 'lucide-react';
+import { Scissors, AlertCircle, Wand2, Clock, FolderOpen, Type, Hash } from 'lucide-react';
 import UrlInput from './components/UrlInput';
 import TimeRangeInput from './components/TimeRangeInput';
 import FileUpload from './components/FileUpload';
@@ -17,6 +17,9 @@ interface TranscriptSegment {
 interface CropRange {
   start: number;
   end: number;
+  title?: string;
+  description?: string;
+  hook?: string;
 }
 
 interface ClipData {
@@ -27,6 +30,7 @@ interface ClipData {
   endTime: number;
   reason?: string;
   title?: string;
+  hook?: string;
   description?: string;
   finalScore?: number;
   retentionScore?: {
@@ -44,6 +48,26 @@ interface ClipData {
 type AppStage = '' | 'downloading' | 'transcribing' | 'analyzing' | 'cropping' | 'rendering' | 'done' | 'error';
 
 type CropMode = 'ai' | 'manual' | 'file';
+
+const HOOK_TEXT_KEY = 'niclipper.hookText';
+const CHANNEL_HASHTAGS_KEY = 'niclipper.channelHashtags';
+
+function readSetting(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function writeSetting(key: string, value: string): void {
+  try { localStorage.setItem(key, value); } catch { /* private mode etc. */ }
+}
+
+/** "radityadika, #PodcastRadityaDika" → ["#radityadika", "#PodcastRadityaDika"] */
+function parseHashtags(input: string): string[] {
+  return input
+    .split(/[\s,]+/)
+    .map((t) => t.replace(/^#+/, '').replace(/[^\p{L}\p{N}_]/gu, ''))
+    .filter(Boolean)
+    .map((t) => `#${t}`);
+}
 
 export default function App() {
   const [mode, setMode] = useState<CropMode>('ai');
@@ -63,6 +87,20 @@ export default function App() {
   const [lastRanges, setLastRanges] = useState<CropRange[]>([]);
   const [lastFileId, setLastFileId] = useState<string | null>(null);
   const [subtitleMode, setSubtitleMode] = useState<SubtitleMode>('auto');
+  const [hookText, setHookText] = useState<boolean>(() => readSetting(HOOK_TEXT_KEY) !== '0');
+  const [channelHashtags, setChannelHashtags] = useState<string>(() => readSetting(CHANNEL_HASHTAGS_KEY) ?? '');
+
+  const toggleHookText = useCallback(() => {
+    setHookText((on) => {
+      writeSetting(HOOK_TEXT_KEY, on ? '0' : '1');
+      return !on;
+    });
+  }, []);
+
+  const updateChannelHashtags = useCallback((value: string) => {
+    setChannelHashtags(value);
+    writeSetting(CHANNEL_HASHTAGS_KEY, value);
+  }, []);
 
   const resetState = useCallback(() => {
     setIsProcessing(true);
@@ -80,6 +118,9 @@ export default function App() {
     let endpoint = `/api/generate?url=${encodedUrl}`;
     if (subtitleMode === 'none') {
       endpoint += '&subtitles=none';
+    }
+    if (!hookText) {
+      endpoint += '&hook=0';
     }
     const eventSource = new EventSource(endpoint);
 
@@ -105,7 +146,14 @@ export default function App() {
           setClips(newClips || []);
           // Save session for subtitle re-render (AI mode)
           setLastUrl(url.trim());
-          setLastRanges((newClips || []).map((c: ClipData) => ({ start: c.startTime, end: c.endTime })));
+          // Keep title/description/hook so a subtitle re-render doesn't drop them.
+          setLastRanges((newClips || []).map((c: ClipData) => ({
+            start: c.startTime,
+            end: c.endTime,
+            ...(c.title ? { title: c.title } : {}),
+            ...(c.description ? { description: c.description } : {}),
+            ...(hookText && c.hook ? { hook: c.hook } : {}),
+          })));
           setLastFileId(null);
           setIsProcessing(false);
           eventSource.close();
@@ -127,7 +175,7 @@ export default function App() {
       setIsProcessing(false);
       eventSource.close();
     };
-  }, [resetState, subtitleMode]);
+  }, [resetState, subtitleMode, hookText]);
 
   const handleManualCrop = useCallback((url: string, ranges: CropRange[], transcript?: string) => {
     resetState();
@@ -423,6 +471,42 @@ export default function App() {
               disabledOptions={mode === 'ai' ? ['manual'] : []}
             />
           </div>
+
+          {/* Hook text toggle (AI mode) */}
+          {mode === 'ai' && (
+            <div className="mt-3 w-full max-w-2xl mx-auto">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={hookText}
+                onClick={toggleHookText}
+                disabled={isProcessing}
+                className={`
+                  w-full flex items-center gap-3 p-3 rounded-xl border text-left
+                  transition-all duration-200 ease-out cursor-pointer
+                  ${hookText ? 'bg-accent/10 border-accent/40' : 'bg-muted/20 border-border hover:border-foreground/20'}
+                  disabled:opacity-50 disabled:cursor-not-allowed
+                  focus:outline-none focus:ring-2 focus:ring-accent/40
+                `}
+              >
+                <Type className={`w-4 h-4 flex-shrink-0 ${hookText ? 'text-accent' : 'text-foreground/40'}`} aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <p className={`text-xs font-medium ${hookText ? 'text-accent' : 'text-foreground/70'}`}>
+                    Hook text at the start
+                  </p>
+                  <p className="text-[11px] text-foreground/40 mt-0.5 leading-tight">
+                    Big text of the clip's hook line for the first 3.5 seconds
+                  </p>
+                </div>
+                <span
+                  aria-hidden="true"
+                  className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors ${hookText ? 'bg-accent' : 'bg-foreground/20'}`}
+                >
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${hookText ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -489,9 +573,32 @@ export default function App() {
                 </p>
               </div>
 
+              {clips.some((c) => c.description) && (
+                <div className="mb-4 max-w-2xl mx-auto">
+                  <label htmlFor="channel-hashtags" className="text-xs font-medium text-foreground/60 flex items-center gap-1.5 mb-1.5">
+                    <Hash className="w-3.5 h-3.5" aria-hidden="true" />
+                    Channel hashtags (added to every description)
+                  </label>
+                  <input
+                    id="channel-hashtags"
+                    type="text"
+                    value={channelHashtags}
+                    onChange={(e) => updateChannelHashtags(e.target.value)}
+                    placeholder="#RadityaDika #PodcastRadityaDika"
+                    className="w-full rounded-lg border border-border bg-muted/20 px-3 py-2 text-sm text-foreground placeholder:text-foreground/30 focus:outline-none focus:ring-2 focus:ring-accent/40"
+                  />
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {clips.map((clip) => (
-                  <ClipCard key={clip.id} clip={clip} onRerender={handleRerenderSubtitles} isProcessing={isProcessing} />
+                  <ClipCard
+                    key={clip.id}
+                    clip={clip}
+                    onRerender={handleRerenderSubtitles}
+                    isProcessing={isProcessing}
+                    channelHashtags={parseHashtags(channelHashtags)}
+                  />
                 ))}
               </div>
             </section>

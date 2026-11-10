@@ -7,6 +7,8 @@ export interface ViralMoment {
   endTime: number;
   reason: string;
   title?: string;
+  /** Short line burned in big at the start of the clip (AI mode) */
+  hook?: string;
   description?: string;
   /** Retention prediction breakdown (0-100 each) */
   retentionScore?: {
@@ -39,6 +41,8 @@ export interface ClipResult {
   endTime: number;
   /** User-specified title, or first few words of transcript */
   title?: string;
+  /** On-screen hook text burned in at the start (AI mode) */
+  hook?: string;
   /** YouTube-ready description (AI mode) */
   description?: string;
   /** Retention prediction breakdown (0-100 each) */
