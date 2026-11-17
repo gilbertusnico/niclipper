@@ -9,10 +9,15 @@ interface TimeRange {
   startSec: string;
   endMin: string;
   endSec: string;
+  /** Optional big text burned in at the start of the clip. */
+  hook: string;
 }
 
+const HOOK_MAX_CHARS = 120;
+type ParsedRange = { start: number; end: number; title?: string; hook?: string };
+
 interface TimeRangeInputProps {
-  onSubmit: (url: string, ranges: { start: number; end: number; title?: string }[], transcript?: string) => void;
+  onSubmit: (url: string, ranges: ParsedRange[], transcript?: string) => void;
   isProcessing: boolean;
   hideUrlInput?: boolean;
   fileLabel?: string;
@@ -22,7 +27,7 @@ interface TimeRangeInputProps {
 const YOUTUBE_REGEX = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+/i;
 
 function createEmptyRange(id: number, label: string): TimeRange {
-  return { id, label, startMin: '', startSec: '', endMin: '', endSec: '' };
+  return { id, label, startMin: '', startSec: '', endMin: '', endSec: '', hook: '' };
 }
 
 function toSeconds(min: string, sec: string): number | null {
@@ -147,7 +152,7 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
 
     // Validate each range
     const errors: string[] = [];
-    const parsedRanges: { start: number; end: number; title?: string }[] = [];
+    const parsedRanges: ParsedRange[] = [];
 
     for (let i = 0; i < ranges.length; i++) {
       const r = ranges[i];
@@ -169,7 +174,8 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
         continue;
       }
 
-      parsedRanges.push({ start, end });
+      const hook = r.hook.replace(/\s+/g, ' ').trim();
+      parsedRanges.push({ start, end, ...(hook ? { hook } : {}) });
     }
 
     // If range errors exist, stop here
@@ -422,6 +428,27 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
               }
               return null;
             })()}
+
+            {/* Hook text — big text for the first 3.5 s (optional) */}
+            <div className="mt-3">
+              <label htmlFor={`hook-${range.id}`} className="text-xs text-foreground/40 block mb-1.5">
+                Hook text at the start <span className="text-foreground/30">(optional)</span>
+              </label>
+              <input
+                id={`hook-${range.id}`}
+                type="text"
+                placeholder="e.g. Ternyata dokter juga bisa jadi dokter cinta?"
+                value={range.hook}
+                maxLength={HOOK_MAX_CHARS}
+                onChange={(e) => updateRange(range.id, 'hook', e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={isProcessing}
+                className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-foreground text-sm placeholder:text-foreground/30 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all duration-150"
+              />
+              <p className="mt-1 text-[11px] text-foreground/30">
+                Shown big at the top for the first 3.5 seconds. Leave empty for no hook text.
+              </p>
+            </div>
 
             {/* Transcript Section — collapsible textarea per range (only in manual mode) */}
             {subtitleMode === 'manual' && (

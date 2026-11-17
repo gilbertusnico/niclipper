@@ -154,6 +154,7 @@ app.get('/api/crop-local', async (req, res) => {
       let start: number;
       let end: number;
       let title: string | undefined;
+      let hook: string | undefined;
 
       if (Array.isArray(pair)) {
         if (pair.length < 2) throw new Error(`Range ${i} is invalid`);
@@ -164,6 +165,7 @@ app.get('/api/crop-local', async (req, res) => {
         start = Number(obj.start);
         end = Number(obj.end);
         title = typeof obj.title === 'string' ? obj.title : undefined;
+        hook = typeof obj.hook === 'string' && obj.hook.trim() ? obj.hook.trim().slice(0, 120) : undefined;
       } else {
         throw new Error(`Range ${i} is invalid`);
       }
@@ -171,7 +173,7 @@ app.get('/api/crop-local', async (req, res) => {
       if (isNaN(start) || isNaN(end) || start < 0 || end <= start) {
         throw new Error(`Range ${i} has invalid values: start=${start}, end=${end}`);
       }
-      return { start, end, ...(title ? { title } : {}) };
+      return { start, end, ...(title ? { title } : {}), ...(hook ? { hook } : {}) };
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Invalid ranges format';
@@ -328,6 +330,7 @@ app.get('/api/crop-manual', async (req, res) => {
       let start: number;
       let end: number;
       let title: string | undefined;
+      let hook: string | undefined;
 
       if (Array.isArray(pair)) {
         if (pair.length < 2) throw new Error(`Range ${i} is invalid`);
@@ -338,6 +341,7 @@ app.get('/api/crop-manual', async (req, res) => {
         start = Number(obj.start);
         end = Number(obj.end);
         title = typeof obj.title === 'string' ? obj.title : undefined;
+        hook = typeof obj.hook === 'string' && obj.hook.trim() ? obj.hook.trim().slice(0, 120) : undefined;
       } else {
         throw new Error(`Range ${i} is invalid`);
       }
@@ -345,7 +349,7 @@ app.get('/api/crop-manual', async (req, res) => {
       if (isNaN(start) || isNaN(end) || start < 0 || end <= start) {
         throw new Error(`Range ${i} has invalid values: start=${start}, end=${end}`);
       }
-      return { start, end, ...(title ? { title } : {}) };
+      return { start, end, ...(title ? { title } : {}), ...(hook ? { hook } : {}) };
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Invalid ranges format';
