@@ -26,6 +26,8 @@ const QUOTE_MAX = 70;
 const HOOK_MAX_WORDS = 9;
 const HOOK_MAX_CHARS = 56;
 const HOOK_MIN_WORDS = 4;
+/** Title/hook lines come from the first 60% of the clip (the setup, not the end). */
+const HOOK_MAX_POSITION = 0.6;
 /** Topic hashtags per clip (people hashtags come on top of these). */
 const TOPIC_TAGS = 2;
 const PEOPLE_TAGS = 3;
@@ -241,6 +243,16 @@ function isContentLine(analysis: Analysis, sp: Span): boolean {
 }
 
 /**
+ * Not a usable headline: a short piece without a sentence end ("Waktu itu si
+ * Riset ini"), or a stuttering line ("Enggak ada enggak ada tetangga itu…").
+ */
+function isFragment(line: string): boolean {
+  const words = line.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, ' ').split(/\s+/).filter(Boolean);
+  if (words.length < 6 && !/[.!?…]$/.test(line)) return true;
+  return words.length >= 5 && new Set(words).size / words.length < 0.7;
+}
+
+/**
  * Short hook for the on-screen text. Same message as the title when that line
  * is already short; else its first clause; else another strong line from the
  * top of the ranking (not a reaction); else the title line's first words.
@@ -255,14 +267,15 @@ function hookOf(analysis: Analysis, candidates: Span[], best: Span | undefined):
   if (fits(line)) return line;
   for (const clause of line.split(/(?<=[,.!?])\s+/)) {
     const c = clause.replace(/[,;:]+$/, '');
-    if (fits(c)) return c;
+    // A clause cut at a comma must still say something on its own.
+    if (fits(c) && !isFragment(c)) return c;
   }
   for (const sp of candidates) {
     if (sp === best) continue;
     const fs = analysis.features.slice(sp.from, sp.to + 1);
     if (Math.max(...fs.map((f) => f.reaction)) >= 0.5) continue;
     const c = cleanLine(sp.text);
-    if (fits(c)) return c;
+    if (fits(c) && !isFragment(c)) return c;
   }
   const words = line.split(' ').slice(0, HOOK_MAX_WORDS);
   while (words.length > HOOK_MIN_WORDS && words.join(' ').length > HOOK_MAX_CHARS) words.pop();
@@ -286,7 +299,13 @@ export function describeClip(
   const ranked = [...spans].sort((a, b) => b.score - a.score);
 
   // ── Title (headline from the strongest line) ──
-  const best = ranked.find((sp) => cleanLine(sp.text).length >= 25) ?? ranked[0];
+  // From the first part of the clip (a hook, not the punchline), and a whole,
+  // non-stuttering line ("Waktu itu si Riset ini" / "Enggak ada enggak ada…" are not).
+  const position = (sp: Span) => (analysis.units[sp.from].start - clipStart) / Math.max(1, clipEnd - clipStart);
+  const usable = (sp: Span) => cleanLine(sp.text).length >= 25 && !isFragment(cleanLine(sp.text));
+  const best = ranked.find((sp) => position(sp) <= HOOK_MAX_POSITION && usable(sp))
+    ?? ranked.find(usable)
+    ?? ranked[0];
   const headline = truncateWords(cleanLine(best?.text ?? ''), QUOTE_MAX) || 'Momen menarik';
   let title = headline;
   const sourceTitle = source.title?.trim();
@@ -294,7 +313,7 @@ export function describeClip(
   if (show && title.length + 3 + show.length <= TITLE_MAX) title += ` | ${show}`;
 
   // ── On-screen hook (short line, read in ~2 s) ──
-  const hook = hookOf(analysis, ranked.slice(0, 4), best);
+  const hook = hookOf(analysis, ranked.filter((sp) => position(sp) <= HOOK_MAX_POSITION).slice(0, 4), best);
 
   // ── Description ──
   // Only lines that say something: no reactions/laughter, no 3-word replies.

@@ -165,6 +165,20 @@ export const CONTEXT_DEPENDENT_STARTS = [
   // mid-story / mid-list continuations
   'ternyata', 'eh ternyata', 'akhirnya', 'terus akhirnya', 'abis itu', 'habis itu', 'setelah itu',
   'kedua', 'ketiga', 'keempat', 'kelima', 'yang kedua', 'yang ketiga', 'terakhir',
+  // clarifying what was just said ("Maksudnya gimana?", "Maksud gua kalau…")
+  'maksudnya', 'maksud gua', 'maksud gue', 'maksud aku', 'maksud saya', 'enggak maksud',
+  'nggak maksud', 'oh bukan', 'bukan bukan', 'iya kan',
+];
+
+/**
+ * Phrases that close one topic and open the next ("Oke, kalau horor…?",
+ * "Nah sekarang…"). A clip must not end on one; in unpunctuated captions a
+ * sentence unit is split before one.
+ */
+export const TOPIC_TRANSITIONS = [
+  'ok kalau', 'oke kalau', 'okay kalau', 'ok kalo', 'oke kalo', 'okay kalo', 'nah kalau', 'nah kalo',
+  'terus kalau', 'terus kalo', 'oke terus', 'ok terus', 'oke sekarang', 'ok sekarang', 'nah sekarang',
+  'oke next', 'ok next', 'oke lanjut', 'ok lanjut', 'oke pertanyaan', 'ok pertanyaan',
 ];
 
 /** Words that are fine (even good) as the first word of a clip. */

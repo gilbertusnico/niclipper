@@ -12,6 +12,8 @@
  *    have a missing end time.
  */
 
+import { TOPIC_TRANSITIONS } from './lexicon.js';
+
 export interface Unit {
   index: number;
   start: number;
@@ -227,6 +229,14 @@ export function splitUnitsAtPauses(
   return out.filter((u) => u.end > u.start).map((u, index) => ({ ...u, index }));
 }
 
+const bare = (t: string | undefined) => (t ?? '').toLowerCase().replace(/[^\p{L}\p{N}-]/gu, '');
+
+/** Does a topic transition ("oke kalau", "nah sekarang") start at word k? */
+function startsTransition(words: { text: string }[], k: number): boolean {
+  const pair = `${bare(words[k]?.text)} ${bare(words[k + 1]?.text)}`;
+  return TOPIC_TRANSITIONS.includes(pair);
+}
+
 /** A gap between two words at least this long ends a sentence unit. */
 const WORD_PAUSE_BREAK = 0.5;
 
@@ -263,7 +273,10 @@ export function buildUnitsFromWords(input: { start: number; end: number; text: s
     const sentenceEnd = /[.!?…]["')\]]*$/.test(w.text);
     const pause = next.start - w.end >= WORD_PAUSE_BREAK;
     const long = w.end - cur[0].start >= MAX_UNIT_SECONDS && (/[,;:]$/.test(w.text) || w.end - cur[0].start >= MAX_UNIT_SECONDS * 1.5);
-    if (sentenceEnd || pause || long) flush();
+    // "…trivia-trivia | ok kalau horor horor kalian juga explore enggak":
+    // without punctuation a new topic's opener is glued onto the last answer.
+    const transition = cur.length >= 2 && startsTransition(words, i + 1);
+    if (sentenceEnd || pause || long || transition) flush();
   }
   flush();
   return out.filter((u) => u.end > u.start);

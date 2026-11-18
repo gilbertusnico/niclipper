@@ -15,6 +15,7 @@ import {
   CONTEXT_DEPENDENT_STARTS, SENTENCE_STARTERS, BAD_START_WORDS, BAD_END_WORDS,
   NUMBER_WORDS, QUANTITY_UNITS, GENERIC_WORDS, REPLY_STARTS, CONTINUATION_STARTS, SHORT_FILLERS,
   ANSWER_PARTICLES, HEDGE_WORDS, PRONOUN_STARTS,
+  TOPIC_TRANSITIONS,
 } from './lexicon.js';
 import { QUESTION_LOOKBACK_SECONDS } from './constants.js';
 
@@ -66,6 +67,17 @@ export interface Analysis {
   silences: PauseSegment[];
   totalDuration: number;
 }
+
+/** First words of a short answer ("Bukan.", "Belum.", "Iya, bener."). */
+const SHORT_ANSWERS = new Set([
+  'iya', 'ya', 'yaa', 'oh', 'ohh', 'bukan', 'belum', 'enggak', 'nggak', 'gak', 'ga', 'tidak',
+  'betul', 'bener', 'benar', 'pernah', 'udah', 'sudah', 'nope', 'yes', 'no',
+]);
+
+/** Units longer than this score marker density, not raw marker counts. */
+const LONG_UNIT_WORDS = 22;
+/** Share of words repeated back to back that marks stutter / crosstalk. */
+const STUTTER_RATIO = 0.08;
 
 function countPhrases(norm: string, phrases: readonly string[]): number {
   let n = 0;
@@ -229,21 +241,32 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null, sourceT
     const tagText = ` ${u.tags.join(' ')} `;
     const laughter = LAUGHTER_TAGS.some((t) => tagText.includes(t)) ? 1 : 0;
     const nonSpeech = u.words.length === 0 || (NON_SPEECH_TAGS.some((t) => tagText.includes(t)) && u.words.length < 3);
-    const question = Math.min(1, countPhrases(norm, QUESTION_MARKERS) * 0.5 + (u.text.includes('?') ? 0.6 : 0));
+    // Marker counts grow with unit length; a 50-word run-on (unpunctuated
+    // auto-captions, people talking over each other) collects "story",
+    // "reaction" and "question" words without being more interesting. Score
+    // marker density instead of raw counts for long units.
+    const lenScale = u.words.length > LONG_UNIT_WORDS ? LONG_UNIT_WORDS / u.words.length : 1;
+    const markers = (phrases: readonly string[]) => countPhrases(norm, phrases) * lenScale;
+    const question = Math.min(1, markers(QUESTION_MARKERS) * 0.5 + (u.text.includes('?') ? 0.6 : 0));
     // Recognition loops ("luang-luang-luang…", the same phrase 20×) carry no content.
     const tokens = u.text.toLowerCase().split(/[\s-]+/).filter(Boolean);
     const repetitive = tokens.length >= 8 && new Set(tokens).size / tokens.length < 0.35;
+    // Stutter / crosstalk ("gini gini gini … dulu dulu dulu … heh"): many
+    // words repeated back to back. Hard to follow in a clip.
+    let adjacentRepeats = 0;
+    for (let k = 1; k < tokens.length; k++) if (tokens[k] === tokens[k - 1]) adjacentRepeats++;
+    const stuttering = tokens.length >= 10 && adjacentRepeats / tokens.length >= STUTTER_RATIO;
 
     const opensWith = (list: readonly string[]) => startsWithAny(norm, list) || startsWithAny(` ${u.words.slice(1).join(' ')} `, list);
     const f: UnitFeatures = {
       theme: theme[i],
-      story: Math.min(1, countPhrases(norm, STORY_MARKERS) * 0.6),
+      story: Math.min(1, markers(STORY_MARKERS) * 0.6),
       opener: opensWith(STORY_OPENERS) || opensWith(OPINION_MARKERS) || opensWith(QUESTION_MARKERS) ||
         opensWith(['nah kalau', 'nah kalo', 'kalau kalian', 'kalo kalian', 'ada tiga', 'ada dua', 'ada lima', 'caranya'])
         ? 1 : 0,
-      opinion: Math.min(1, countPhrases(norm, OPINION_MARKERS) * 0.7),
-      insight: Math.min(1, countPhrases(norm, INSIGHT_MARKERS) * 0.5),
-      reaction: Math.min(1, countPhrases(norm, REACTION_MARKERS) * 0.5 + laughter + (u.text.includes('!') ? 0.3 : 0)),
+      opinion: Math.min(1, markers(OPINION_MARKERS) * 0.7),
+      insight: Math.min(1, markers(INSIGHT_MARKERS) * 0.5),
+      reaction: Math.min(1, markers(REACTION_MARKERS) * 0.5 + laughter + (u.text.includes('!') ? 0.3 : 0)),
       question,
       conclusion: Math.min(1, countPhrases(norm, CONCLUSION_MARKERS) * 0.7 + (u.words[0] === 'jadi' ? 0.4 : 0)),
       specificity: specificityOf(u.words),
@@ -275,6 +298,7 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null, sourceT
     interest -= Math.min(0.3, f.fillerRatio * 2.5);
     if (f.nonSpeech) interest = 0;
     if (repetitive) interest *= 0.25;
+    else if (stuttering) interest *= 0.6;
     f.interest = Math.max(0, Math.min(1, interest / 0.6));
     return f;
   });
@@ -390,6 +414,16 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null, sourceT
         break;
       }
     }
+    // Right after a short answer ("Bukan." / "Oh, bukan sor." / "Belum.") the
+    // speaker is still answering: start at the question instead.
+    // A new question ("Kalau enggak, itu gimana…?") opens a new exchange and may start a clip.
+    const asksQuestion = u.text.trim().endsWith('?') || startsWithAny(u.norm, QUESTION_MARKERS);
+    if (i > 0 && u.start - units[i - 1].end < 2 && !asksQuestion) {
+      const prev = units[i - 1];
+      if (prev.words.length > 0 && prev.words.length <= 3 && SHORT_ANSWERS.has(prev.words[0])) q = Math.min(q, 0.3);
+    }
+    // A bare answer ("Bukan." / "Belum.") is not an opening line either.
+    if (u.words.length > 0 && u.words.length <= 3 && SHORT_ANSWERS.has(u.words[0]) && !asksQuestion) q -= 0.4;
     // "Oke, oke." / "Nah." / "Iya." on its own is a reply or filler, not a hook.
     if (u.words.length > 0 && u.words.length <= 2 && u.words.every((w) => REPLY_STARTS.has(w) || SHORT_FILLERS.has(w))) q -= 0.4;
     // A short line carrying laughter ("[tertawa] Si Bubuy.") reacts to what came before.
@@ -413,6 +447,9 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null, sourceT
     if (isReaction(i) && breakAfter[i] >= 0.4) q = Math.max(q, 0.8);
     // Never end on a question: the answer is the payoff.
     if (u.text.trim().endsWith('?')) q = Math.min(q, 0.3);
+    // …nor on a line that opens the next topic ("Oke, kalau horor-horor
+    // kalian juga explore enggak?" — auto-captions often drop the "?").
+    if (TOPIC_TRANSITIONS.some((t) => u.norm.includes(` ${t} `))) q = Math.min(q, 0.3);
     // Don't cut right before the reaction: it IS the punchline.
     for (let k = i + 1; k <= Math.min(n - 1, i + 2) && units[k].start - u.end < 3; k++) {
       if (isReaction(k)) {
