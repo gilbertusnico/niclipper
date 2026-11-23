@@ -14,6 +14,12 @@ interface TimeRange {
 }
 
 const HOOK_MAX_CHARS = 120;
+
+/** Time fields in typing order; after 2 digits focus moves to the next one. */
+const TIME_FIELDS = ['startMin', 'startSec', 'endMin', 'endSec'] as const;
+type TimeField = typeof TIME_FIELDS[number];
+
+const timeFieldId = (rangeId: number, field: TimeField) => `range-${rangeId}-${field}`;
 type ParsedRange = { start: number; end: number; title?: string; hook?: string };
 
 interface TimeRangeInputProps {
@@ -129,6 +135,23 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
       delete next[id];
       return next;
     });
+  };
+
+  /**
+   * Type a time field: digits only (seconds max 2). Typing the 2nd digit
+   * jumps to the next field (start min → start sec → end min → end sec), so
+   * "23 40 24 35" fills a range without Tab. Deleting never jumps.
+   */
+  const typeTime = (id: number, field: TimeField, raw: string, previous: string) => {
+    let value = raw.replace(/\D/g, '');
+    if (field.endsWith('Sec')) value = value.slice(0, 2);
+    updateRange(id, field, value);
+    const next = TIME_FIELDS[TIME_FIELDS.indexOf(field) + 1];
+    if (next && value.length === 2 && value.length > previous.length) {
+      const el = document.getElementById(timeFieldId(id, next)) as HTMLInputElement | null;
+      el?.focus();
+      el?.select();
+    }
   };
 
   const toggleTranscript = (id: number) => {
@@ -356,7 +379,9 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
                     inputMode="numeric"
                     placeholder="0"
                     value={range.startMin}
-                    onChange={(e) => updateRange(range.id, 'startMin', e.target.value.replace(/\D/g, ''))}
+                    id={timeFieldId(range.id, 'startMin')}
+                    onChange={(e) => typeTime(range.id, 'startMin', e.target.value, range.startMin)}
+                    onFocus={(e) => e.target.select()}
                     disabled={isProcessing}
                     className="w-14 px-2 py-2 rounded-lg bg-muted border border-border text-center text-foreground text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all duration-150"
                     aria-label={`${range.label} start minutes`}
@@ -367,7 +392,9 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
                     inputMode="numeric"
                     placeholder="00"
                     value={range.startSec}
-                    onChange={(e) => updateRange(range.id, 'startSec', e.target.value.replace(/\D/g, '').slice(0, 2))}
+                    id={timeFieldId(range.id, 'startSec')}
+                    onChange={(e) => typeTime(range.id, 'startSec', e.target.value, range.startSec)}
+                    onFocus={(e) => e.target.select()}
                     disabled={isProcessing}
                     className="w-14 px-2 py-2 rounded-lg bg-muted border border-border text-center text-foreground text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all duration-150"
                     aria-label={`${range.label} start seconds`}
@@ -390,7 +417,9 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
                     inputMode="numeric"
                     placeholder="0"
                     value={range.endMin}
-                    onChange={(e) => updateRange(range.id, 'endMin', e.target.value.replace(/\D/g, ''))}
+                    id={timeFieldId(range.id, 'endMin')}
+                    onChange={(e) => typeTime(range.id, 'endMin', e.target.value, range.endMin)}
+                    onFocus={(e) => e.target.select()}
                     disabled={isProcessing}
                     className="w-14 px-2 py-2 rounded-lg bg-muted border border-border text-center text-foreground text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all duration-150"
                     aria-label={`${range.label} end minutes`}
@@ -401,7 +430,9 @@ export default function TimeRangeInput({ onSubmit, isProcessing, hideUrlInput, f
                     inputMode="numeric"
                     placeholder="00"
                     value={range.endSec}
-                    onChange={(e) => updateRange(range.id, 'endSec', e.target.value.replace(/\D/g, '').slice(0, 2))}
+                    id={timeFieldId(range.id, 'endSec')}
+                    onChange={(e) => typeTime(range.id, 'endSec', e.target.value, range.endSec)}
+                    onFocus={(e) => e.target.select()}
                     disabled={isProcessing}
                     className="w-14 px-2 py-2 rounded-lg bg-muted border border-border text-center text-foreground text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all duration-150"
                     aria-label={`${range.label} end seconds`}
