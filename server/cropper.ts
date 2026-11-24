@@ -13,6 +13,7 @@ import {
   fitFontSize,
 } from './subtitle-style.js';
 import { generateHookAss, buildHookDrawText } from './hook-overlay.js';
+import { detectWideShots, framedGraph, type Interval } from './framing.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -179,13 +180,32 @@ export async function cropClips(
 
   const vf = vfParts.join(',');
 
+  // ── Wide shots: show the whole frame on a blurred background ──
+  // Only for landscape sources (a 9:16 crop actually cuts something away).
+  let wide: Interval[] = [];
+  if (cropX > 0 && hasFfmpegFilter('gblur')) {
+    wide = await detectWideShots(videoPath, moment.startTime, duration,
+      { width: cropWidth, height: cropHeight, x: cropX, y: cropY }, tempDir, clipIndex);
+    if (wide.length) {
+      const secs = wide.reduce((a, iv) => a + iv.end - iv.start, 0);
+      console.log(`[Cropper] Clip ${clipIndex}: ${wide.length} wide shot(s), ${secs.toFixed(1)}s of ${duration.toFixed(1)}s shown whole on a blurred background.`);
+    }
+  }
+  const overlays = vfParts.slice(3); // subtitles / hook, drawn on the 1080×1920 result
+  const videoArgs = wide.length
+    ? ['-filter_complex',
+      `${framedGraph({ width: cropWidth, height: cropHeight, x: cropX, y: cropY }, wide, duration)};` +
+      `[framed]${overlays.length ? overlays.join(',') : 'null'}[vout]`,
+      '-map', '[vout]', '-map', '0:a?']
+    : ['-vf', vf];
+
   const args = [
     '-ss', String(moment.startTime),
     '-i', videoPath,
     '-t', String(duration),
     '-c:v', 'libx264',
     '-c:a', 'aac',
-    '-vf', vf,
+    ...videoArgs,
     '-preset', 'fast',
     '-crf', '22',
     '-pix_fmt', 'yuv420p',
