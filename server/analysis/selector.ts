@@ -11,7 +11,7 @@ import {
   CLIP_MIN_SECONDS, CLIP_MAX_SECONDS, CLIP_IDEAL_SECONDS, CLIP_IDEAL_SPREAD,
   HOOK_WINDOW_SECONDS, PAYOFF_WINDOW_SECONDS, MIN_START_QUALITY, MIN_END_QUALITY,
   MIN_GAP_BETWEEN_CLIPS, MAX_KEYWORD_OVERLAP, MIN_RELATIVE_SCORE, WEIGHTS,
-  EDGE_ZONE_SECONDS, EDGE_ZONE_FRACTION, MIN_ANSWER_SECONDS,
+  EDGE_ZONE_SECONDS, EDGE_ZONE_FRACTION, EDGE_ZONE_PENALTY, EDGE_ZONE_PENALTY_PER_SHARE, MIN_ANSWER_SECONDS,
 } from './constants.js';
 
 interface Window {
@@ -153,7 +153,7 @@ export function scoreWindows(analysis: Analysis, relax = false): Window[] {
       const q = lastQuestion[e];
       if (q >= s && units[q].start > ws + duration / 2 && we - units[q].end < MIN_ANSWER_SECONDS) penalty += 0.3;
       const edgeOverlap = Math.max(0, Math.min(we, introEnd) - ws) + Math.max(0, we - Math.max(ws, outroStart));
-      if (edgeOverlap > 0) penalty += 0.15 + 0.5 * (edgeOverlap / duration);
+      if (edgeOverlap > 0) penalty += EDGE_ZONE_PENALTY + EDGE_ZONE_PENALTY_PER_SHARE * (edgeOverlap / duration);
 
       const score =
         WEIGHTS.density * density +

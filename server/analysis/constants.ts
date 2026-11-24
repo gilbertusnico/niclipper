@@ -11,7 +11,13 @@ export const CLIP_MAX_SECONDS = 75;
 export const CLIP_IDEAL_SECONDS = 50;
 export const CLIP_IDEAL_SPREAD = 22;
 /** Opening/closing stretch of the video (greetings, guest intro, thanks, sign-off). */
-export const EDGE_ZONE_SECONDS = 90;
+export const EDGE_ZONE_SECONDS = 45;
+/** Penalty for overlapping that zone: base + per share of the clip inside it.
+ *  Kept light: the real greetings / sign-off are penalised by their own words
+ *  (INTRO_MARKERS / OUTRO_MARKERS); the zone alone once hid a strong story told
+ *  a minute before the end. */
+export const EDGE_ZONE_PENALTY = 0.05;
+export const EDGE_ZONE_PENALTY_PER_SHARE = 0.25;
 export const EDGE_ZONE_FRACTION = 0.05;
 /** How many clips AI mode returns. */
 export const DEFAULT_MAX_CLIPS = 5;
