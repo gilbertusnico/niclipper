@@ -132,6 +132,11 @@ export const SPONSOR_MARKERS = [
   'sponsor', 'disponsori', 'didukung oleh', 'brought to you', 'kode promo', 'kode voucher',
   'promo code', 'pakai kode', 'gunakan kode', 'download aplikasinya', 'download sekarang',
   'diskon', 'cashback', 'partner kita', 'kerja sama dengan', 'paid promote',
+  // ad reads done as banter ("Jangan lupa X … ini juga jual mesin cuci", "Ini adalah produknya X")
+  'juga jual', 'juga menjual', 'adalah produknya', 'produk dari', 'produknya dari', 'bisa dibeli',
+  'beli sekarang', 'belinya di', 'link di deskripsi', 'link di bio', 'cek link', 'klik link',
+  'kami merekomendasikan', 'kita merekomendasikan', 'kami rekomendasikan', 'hard selling',
+  'official store', 'flash sale', 'checkout sekarang',
 ];
 
 /**
