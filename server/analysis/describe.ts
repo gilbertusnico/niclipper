@@ -11,7 +11,7 @@
  */
 
 import type { Analysis } from './features.js';
-import { STOP_WORDS, FILLER_WORDS, BAD_START_WORDS, GENERIC_WORDS, REACTION_MARKERS } from './lexicon.js';
+import { FILLER_WORDS, BAD_START_WORDS } from './lexicon.js';
 import { stem } from './features.js';
 
 export interface SourceInfo {
@@ -126,7 +126,7 @@ function scoreSpan(analysis: Analysis, sp: Span, clipStart: number, clipEnd: num
   // Prefer lines made of words that recur in the video or are common words —
   // one-off words are mostly caption/recognition errors and make ugly titles.
   const words = analysis.units.slice(sp.from, sp.to + 1).flatMap((u) => u.words);
-  const known = words.filter((w) => STOP_WORDS.has(w) || w.length <= 3 || (analysis.df.get(w) ?? 0) >= 2).length;
+  const known = words.filter((w) => analysis.profile.lex.STOP_WORDS.has(w) || w.length <= 3 || (analysis.df.get(w) ?? 0) >= 2).length;
   const knownRatio = words.length ? known / words.length : 0;
   const theme = Math.max(...fs.map((f) => f.theme));
   const len = cleanLine(sp.text).length;
@@ -149,9 +149,9 @@ function scoreSpan(analysis: Analysis, sp: Span, clipStart: number, clipEnd: num
   );
 }
 
-const REACTION = new Set(REACTION_MARKERS.filter((r) => !r.includes(' ')));
-
 function hashtagsOf(analysis: Analysis, s: number, e: number): string[] {
+  const { STOP_WORDS, GENERIC_WORDS, REACTION_MARKERS } = analysis.profile.lex;
+  const REACTION = new Set(REACTION_MARKERS.filter((r) => !r.includes(' ')));
   const counts = new Map<string, number>();
   for (let k = s; k <= e; k++) {
     for (const w of analysis.features[k].keywords) {
@@ -331,7 +331,7 @@ export function describeClip(
     if (sourceTitle) lines.push(`Cuplikan dari: ${sourceTitle}`);
     if (link) lines.push(`Video lengkap: ${link}`);
   }
-  const tags = dedupeTags([...peopleTags(sourceTitle), ...hashtagsOf(analysis, s, e), '#shorts']);
+  const tags = dedupeTags([...peopleTags(sourceTitle), ...hashtagsOf(analysis, s, e), ...analysis.profile.extraHashtags, '#shorts']);
   lines.push('', tags.join(' '));
 
   return { title, hook, description: lines.join('\n').trim() };

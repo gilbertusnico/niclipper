@@ -10,6 +10,7 @@ import * as archiver from 'archiver';
 import multer from 'multer';
 import { getFfmpegPath } from './ffmpeg.js';
 import { runPipeline } from './pipeline.js';
+import { parseProfileId } from './analysis/profiles.js';
 import { runManualPipeline } from './manual-pipeline.js';
 import type { TimeRange } from './manual-pipeline.js';
 
@@ -236,6 +237,8 @@ app.get('/api/generate', async (req, res) => {
   const subtitles = req.query.subtitles as string | undefined;
   // Big hook text at the start of each clip; on unless ?hook=0
   const hookText = req.query.hook !== '0';
+  // Analysis profile: 'podcast' (default) or 'sermon'
+  const profile = parseProfileId(req.query.profile);
 
   // Validate URL
   if (!url || typeof url !== 'string') {
@@ -276,7 +279,7 @@ app.get('/api/generate', async (req, res) => {
       if (!aborted) {
         sendEvent(stage, progress, extra);
       }
-    }, (subtitles as 'auto' | 'none' | 'manual') || 'auto', hookText);
+    }, (subtitles as 'auto' | 'none' | 'manual') || 'auto', hookText, profile);
 
     if (!aborted) {
       sendEvent('done', 100, { clips });

@@ -12,6 +12,7 @@ import {
   HOOK_WINDOW_SECONDS, PAYOFF_WINDOW_SECONDS, MIN_START_QUALITY, MIN_END_QUALITY,
   MIN_GAP_BETWEEN_CLIPS, MAX_KEYWORD_OVERLAP, MIN_RELATIVE_SCORE, WEIGHTS,
   EDGE_ZONE_SECONDS, EDGE_ZONE_FRACTION, EDGE_ZONE_PENALTY, EDGE_ZONE_PENALTY_PER_SHARE, MIN_ANSWER_SECONDS,
+  LITURGY_PENALTY, SETUP_PENALTY,
 } from './constants.js';
 
 interface Window {
@@ -59,6 +60,8 @@ export function scoreWindows(analysis: Analysis, relax = false): Window[] {
   const ctaP = pre((k) => (features[k].cta ? 1 : 0));
   const introP = pre((k) => (features[k].intro ? 1 : 0));
   const outroP = pre((k) => (features[k].outro ? 1 : 0));
+  const liturgyP = pre((k) => (features[k].liturgy ? 1 : 0));
+  const setupP = pre((k) => (features[k].setup ? 1 : 0));
   const sum = (p: Float64Array, a: number, b: number) => p[b + 1] - p[a];
 
   // Hook: interest of the first HOOK_WINDOW seconds + strong opener signals.
@@ -143,6 +146,10 @@ export function scoreWindows(analysis: Analysis, relax = false): Window[] {
       if (sum(ctaP, s, e) > 0) penalty += 0.3;
       if (sum(introP, s, e) > 0) penalty += 0.5;
       if (sum(outroP, s, e) > 0) penalty += 0.5;
+      // Sermon profile only (always 0 for podcasts): prayer / offering /
+      // announcements are never a clip; housekeeping lines cost a little.
+      if (sum(liturgyP, s, e) > 0) penalty += LITURGY_PENALTY;
+      if (sum(setupP, s, e) > 0) penalty += SETUP_PENALTY;
       const fillerRatio = words ? sum(fillP, s, e) / words : 0;
       penalty += Math.max(0, fillerRatio - 0.05) * 3;
       penalty += (sum(silentP, s, e) / duration) * 1.5;

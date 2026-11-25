@@ -52,6 +52,11 @@ export const WEIGHTS = {
   duration: 0.04,
 } as const;
 
+/** Sermon profile: a window containing prayer / offering / announcements / worship leading. */
+export const LITURGY_PENALTY = 0.5;
+/** Sermon profile: a window containing housekeeping ("buka Alkitab", "katakan ke sebelah"). */
+export const SETUP_PENALTY = 0.25;
+
 // ─── Selection ───────────────────────────────────────────────────────────
 /** Seconds that must separate two selected clips. */
 export const MIN_GAP_BETWEEN_CLIPS = 5;

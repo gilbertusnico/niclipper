@@ -1,0 +1,346 @@
+{
+ "podcast-punctuated-cues": [
+  {
+   "startTime": 702.1,
+   "endTime": 731.38,
+   "reason": "pembuka kuat · penutup tuntas · satu topik utuh · berisi cerita, opini, insight/tips, angka/fakta, tanya-jawab, reaksi · topik: belas, cabang, intinya, belajar",
+   "title": "Gimana caranya lo bisa bertahan waktu itu? | Dari Garasi ke 15 Cabang: Cerita…",
+   "hook": "Gimana caranya lo bisa bertahan waktu itu?",
+   "description": "Waktu itu gue pernah ke Bandung naik motor sendirian. Saya pikir semua orang bisa kalau mau.\n\nCuplikan dari: Dari Garasi ke 15 Cabang: Cerita Bisnis Kopi | Podcast\n\n#Garasi #belas #cabang #shorts",
+   "retentionScore": {
+    "hook3s": 82,
+    "maintain10s": 83,
+    "payoffFull": 74,
+    "overall": 90
+   },
+   "finalScore": 8.1,
+   "narrativeStages": [
+    "cerita",
+    "opini",
+    "insight/tips",
+    "angka/fakta",
+    "tanya-jawab",
+    "reaksi"
+   ]
+  },
+  {
+   "startTime": 329.52,
+   "endTime": 358.18,
+   "reason": "pembuka kuat · penutup tuntas · satu topik utuh · berisi cerita, opini, insight/tips, angka/fakta, tanya-jawab, reaksi · topik: takut, gagal, menurut, terlalu",
+   "title": "Kenapa sih orang takut gagal? | Dari Garasi ke 15 Cabang: Cerita…",
+   "hook": "Kenapa sih orang takut gagal?",
+   "description": "Masalahnya banyak orang gak sadar soal itu. Kalian tau gak, sembilan puluh persen startup gagal di tahun pertama.\n\nCuplikan dari: Dari Garasi ke 15 Cabang: Cerita Bisnis Kopi | Podcast\n\n#Garasi #menurut #terlalu #shorts",
+   "retentionScore": {
+    "hook3s": 88,
+    "maintain10s": 80,
+    "payoffFull": 90,
+    "overall": 87
+   },
+   "finalScore": 7.9,
+   "narrativeStages": [
+    "cerita",
+    "opini",
+    "insight/tips",
+    "angka/fakta",
+    "tanya-jawab",
+    "reaksi"
+   ]
+  },
+  {
+   "startTime": 188.64,
+   "endTime": 260.05,
+   "reason": "pembuka kuat · penutup tuntas · satu topik utuh · berisi cerita, opini, insight/tips, angka/fakta, tanya-jawab, reaksi · topik: intinya, belajar, jangan, berhenti",
+   "title": "Intinya jangan pernah berhenti belajar. | Dari Garasi ke 15 Cabang: Cerita…",
+   "hook": "Intinya jangan pernah berhenti belajar.",
+   "description": "Pas gue pertama kali buka toko, yang dateng cuma dua orang. Kalian tau gak, sembilan puluh persen startup gagal di tahun pertama.\n\nCuplikan dari: Dari Garasi ke 15 Cabang: Cerita Bisnis Kopi | Podcast\n\n#Garasi #belajar #jangan #shorts",
+   "retentionScore": {
+    "hook3s": 82,
+    "maintain10s": 81,
+    "payoffFull": 71,
+    "overall": 86
+   },
+   "finalScore": 7.8,
+   "narrativeStages": [
+    "cerita",
+    "opini",
+    "insight/tips",
+    "angka/fakta",
+    "tanya-jawab",
+    "reaksi"
+   ]
+  },
+  {
+   "startTime": 647.2,
+   "endTime": 693.13,
+   "reason": "pembuka kuat · satu topik utuh · berisi cerita, opini, insight/tips, tanya-jawab, reaksi · topik: serius, beneran, dua, ceritanya",
+   "title": "Intinya jangan pernah berhenti belajar. | Dari Garasi ke 15 Cabang: Cerita…",
+   "hook": "Intinya jangan pernah berhenti belajar.",
+   "description": "Sebenarnya yang paling penting itu kesehatan mental. Lo pernah gak ngerasa salah jurusan?\n\nCuplikan dari: Dari Garasi ke 15 Cabang: Cerita Bisnis Kopi | Podcast\n\n#Garasi #kuliah #semester #shorts",
+   "retentionScore": {
+    "hook3s": 89,
+    "maintain10s": 73,
+    "payoffFull": 57,
+    "overall": 86
+   },
+   "finalScore": 7.8,
+   "narrativeStages": [
+    "cerita",
+    "opini",
+    "insight/tips",
+    "tanya-jawab",
+    "reaksi"
+   ]
+  },
+  {
+   "startTime": 878.35,
+   "endTime": 909.51,
+   "reason": "pembuka kuat · penutup tuntas · satu topik utuh · berisi cerita, insight/tips, angka/fakta, tanya-jawab, reaksi · topik: malah, suka, protes, capek",
+   "title": "Kalian tau gak, sembilan puluh persen startup gagal di tahun pertama.",
+   "hook": "sembilan puluh persen startup gagal di tahun pertama.",
+   "description": "Akhirnya dia nangis di depan kantor. Pas gue pertama kali buka toko, yang dateng cuma dua orang.\n\nCuplikan dari: Dari Garasi ke 15 Cabang: Cerita Bisnis Kopi | Podcast\n\n#Garasi #malah #protes #shorts",
+   "retentionScore": {
+    "hook3s": 88,
+    "maintain10s": 75,
+    "payoffFull": 86,
+    "overall": 86
+   },
+   "finalScore": 7.7,
+   "narrativeStages": [
+    "cerita",
+    "insight/tips",
+    "angka/fakta",
+    "tanya-jawab",
+    "reaksi"
+   ]
+  }
+ ],
+ "podcast-autocaption-words": [
+  {
+   "startTime": 64.16,
+   "endTime": 101.25,
+   "reason": "pembuka kuat · penutup tuntas · satu topik utuh · berisi cerita, opini, insight/tips, angka/fakta, tanya-jawab, reaksi · topik: kalian, sembilan, kesempatan, intinya",
+   "title": "Akhirnya dia nangis di depan kantor jujur aja gue gak setuju sama…",
+   "hook": "Akhirnya dia nangis di depan kantor jujur aja gue…",
+   "description": "Ceritanya gue lagi kuliah semester tiga pas gue pertama kali buka toko yang dateng cuma dua orang. Kesempatan yang sama kalian tau gak sembilan puluh persen startup gagal di tahun pertama terus akhirnya dia nangis di depan kantor.\n\nCuplikan dari: Dari Garasi ke 15 Cabang: Cerita Bisnis Kopi | Podcast\n\n#Garasi #kalian #sembilan #shorts",
+   "retentionScore": {
+    "hook3s": 85,
+    "maintain10s": 98,
+    "payoffFull": 84,
+    "overall": 90
+   },
+   "finalScore": 9.6,
+   "narrativeStages": [
+    "cerita",
+    "opini",
+    "insight/tips",
+    "angka/fakta",
+    "tanya-jawab",
+    "reaksi"
+   ]
+  },
+  {
+   "startTime": 952.66,
+   "endTime": 980.11,
+   "reason": "pembuka kuat · penutup tuntas · satu topik utuh · berisi cerita, insight/tips, angka/fakta, tanya-jawab · topik: ngerasa, salah, jurusan, caranya",
+   "title": "Kalian tau gak sembilan puluh persen startup gagal di tahun pertama…",
+   "hook": "Kalian tau gak sembilan puluh persen startup gagal di…",
+   "description": "Contohnya gue dulu ambil teknik sipil lo pernah gak ngerasa salah jurusan apa sih bedanya investasi sama spekulasi makanya gue mulai… Apa sih bedanya investasi sama spekulasi.\n\nCuplikan dari: Dari Garasi ke 15 Cabang: Cerita Bisnis Kopi | Podcast\n\n#Garasi #jurusan #bertahan #shorts",
+   "retentionScore": {
+    "hook3s": 78,
+    "maintain10s": 96,
+    "payoffFull": 78,
+    "overall": 89
+   },
+   "finalScore": 9.5,
+   "narrativeStages": [
+    "cerita",
+    "insight/tips",
+    "angka/fakta",
+    "tanya-jawab"
+   ]
+  },
+  {
+   "startTime": 198.09,
+   "endTime": 234.24,
+   "reason": "pembuka kuat · penutup tuntas · satu topik utuh · berisi cerita, opini, insight/tips, angka/fakta, reaksi · topik: serius, intinya, belajar, tua",
+   "title": "Masalahnya banyak orang gak sadar soal itu orang tua gue dulu gak…",
+   "hook": "Masalahnya banyak orang gak sadar soal itu orang tua…",
+   "description": "Apa sih bedanya investasi sama spekulasi pertama lo harus tau tujuan lo makanya gue mulai jualan kopi di garasi rumah makanya gue mulai… Inget banget malam itu hujan deras dan listrik mati.\n\nCuplikan dari: Dari Garasi ke 15 Cabang: Cerita Bisnis Kopi | Podcast\n\n#Garasi #belajar #kuliah #shorts",
+   "retentionScore": {
+    "hook3s": 93,
+    "maintain10s": 96,
+    "payoffFull": 84,
+    "overall": 89
+   },
+   "finalScore": 9.5,
+   "narrativeStages": [
+    "cerita",
+    "opini",
+    "insight/tips",
+    "angka/fakta",
+    "reaksi"
+   ]
+  },
+  {
+   "startTime": 296.6,
+   "endTime": 332.85,
+   "reason": "pembuka kuat · penutup tuntas · satu topik utuh · berisi cerita, opini, insight/tips, angka/fakta, reaksi · topik: situ, bahwa, gila, parah",
+   "title": "Dari situ gue sadar bahwa uang bukan segalanya gila parah banget sih…",
+   "hook": "Dari situ gue sadar bahwa uang bukan segalanya gila…",
+   "description": "Malam itu hujan deras dan listrik mati contohnya gue dulu ambil teknik sipil gue habisin dua puluh juta dalam tiga bulan dari situ gue…\n\nCuplikan dari: Dari Garasi ke 15 Cabang: Cerita Bisnis Kopi | Podcast\n\n#Garasi #bahwa #uang #shorts",
+   "retentionScore": {
+    "hook3s": 71,
+    "maintain10s": 94,
+    "payoffFull": 69,
+    "overall": 86
+   },
+   "finalScore": 9.1,
+   "narrativeStages": [
+    "cerita",
+    "opini",
+    "insight/tips",
+    "angka/fakta",
+    "reaksi"
+   ]
+  },
+  {
+   "startTime": 825.46,
+   "endTime": 870.1,
+   "reason": "pembuka kuat · penutup tuntas · satu topik utuh · berisi cerita, opini, insight/tips, angka/fakta, tanya-jawab, reaksi · topik: risiko, sebenarnya, paling, ambil",
+   "title": "Ceritanya gue lagi kuliah semester tiga kalian tau gak sembilan… | Dari Garasi ke 15 Cabang: Cerita…",
+   "hook": "Ceritanya gue lagi kuliah semester tiga kalian tau gak…",
+   "description": "Kenapa sih orang takut gagal bedanya ada di waktu dan risiko yang lo ambil gue inget banget malam itu hujan deras dan listrik mati bukan. Bedanya ada di waktu dan risiko yang lo ambil bukan terus akhirnya dia nangis di depan kantor kalian tau gak sembilan puluh persen startup…\n\nCuplikan dari: Dari Garasi ke 15 Cabang: Cerita Bisnis Kopi | Podcast\n\n#Garasi #risiko #paling #shorts",
+   "retentionScore": {
+    "hook3s": 81,
+    "maintain10s": 90,
+    "payoffFull": 81,
+    "overall": 85
+   },
+   "finalScore": 9.1,
+   "narrativeStages": [
+    "cerita",
+    "opini",
+    "insight/tips",
+    "angka/fakta",
+    "tanya-jawab",
+    "reaksi"
+   ]
+  }
+ ],
+ "podcast-punctuated-audio": [
+  {
+   "startTime": 1660.48,
+   "endTime": 1694.1,
+   "reason": "pembuka kuat · penutup tuntas · satu topik utuh · berisi cerita, opini, insight/tips, angka/fakta, tanya-jawab, reaksi · topik: bandung, naik, motor, sendirian",
+   "title": "Kalian tau gak, sembilan puluh persen startup gagal di tahun… | Dari Garasi ke 15 Cabang: Cerita…",
+   "hook": "sembilan puluh persen startup gagal di tahun pertama.",
+   "description": "Kalian tau gak, sembilan puluh persen startup gagal di tahun pertama. Orang tua gue dulu gak setuju gue berhenti kerja. Terus akhirnya dia…\n\nCuplikan dari: Dari Garasi ke 15 Cabang: Cerita Bisnis Kopi | Podcast\n\n#Garasi #bandung #naik #shorts",
+   "retentionScore": {
+    "hook3s": 100,
+    "maintain10s": 100,
+    "payoffFull": 100,
+    "overall": 90
+   },
+   "finalScore": 10,
+   "narrativeStages": [
+    "cerita",
+    "opini",
+    "insight/tips",
+    "angka/fakta",
+    "tanya-jawab",
+    "reaksi"
+   ]
+  },
+  {
+   "startTime": 1218.43,
+   "endTime": 1247.55,
+   "reason": "pembuka kuat · penutup tuntas · satu topik utuh · berisi cerita, opini, insight/tips, tanya-jawab, reaksi · topik: makanya, jualan, rumah, bandung",
+   "title": "Intinya jangan pernah berhenti belajar. | Dari Garasi ke 15 Cabang: Cerita…",
+   "hook": "Intinya jangan pernah berhenti belajar.",
+   "description": "Jujur aja, gue gak setuju sama cara itu. Sebenarnya yang paling penting itu kesehatan mental.\n\nCuplikan dari: Dari Garasi ke 15 Cabang: Cerita Bisnis Kopi | Podcast\n\n#Garasi #jualan #rumah #shorts",
+   "retentionScore": {
+    "hook3s": 96,
+    "maintain10s": 97,
+    "payoffFull": 93,
+    "overall": 86
+   },
+   "finalScore": 10,
+   "narrativeStages": [
+    "cerita",
+    "opini",
+    "insight/tips",
+    "tanya-jawab",
+    "reaksi"
+   ]
+  },
+  {
+   "startTime": 823.78,
+   "endTime": 868.75,
+   "reason": "pembuka kuat · penutup tuntas · satu topik utuh · berisi cerita, opini, insight/tips, angka/fakta, tanya-jawab, reaksi · topik: menurut, terlalu, cepat, menilai",
+   "title": "Menurut gue sih orang terlalu cepat menilai. Gue habisin dua puluh…",
+   "hook": "Menurut gue sih orang terlalu cepat menilai.",
+   "description": "Menurut gue sih orang terlalu cepat menilai. Kenapa sih orang takut gagal? Kalian tau gak, sembilan puluh persen startup gagal di tahun… Jujur aja, gue gak setuju sama cara itu.\n\nCuplikan dari: Dari Garasi ke 15 Cabang: Cerita Bisnis Kopi | Podcast\n\n#Garasi #menurut #terlalu #shorts",
+   "retentionScore": {
+    "hook3s": 95,
+    "maintain10s": 89,
+    "payoffFull": 93,
+    "overall": 86
+   },
+   "finalScore": 10,
+   "narrativeStages": [
+    "cerita",
+    "opini",
+    "insight/tips",
+    "angka/fakta",
+    "tanya-jawab",
+    "reaksi"
+   ]
+  },
+  {
+   "startTime": 677.48,
+   "endTime": 708.05,
+   "reason": "pembuka kuat · penutup tuntas · satu topik utuh · berisi cerita, opini, insight/tips, angka/fakta, tanya-jawab, reaksi · topik: menurut, makanya, jualan, rumah",
+   "title": "Menurut gue sih orang terlalu cepat menilai. Makanya gue mulai… | Dari Garasi ke 15 Cabang: Cerita…",
+   "hook": "Menurut gue sih orang terlalu cepat menilai.",
+   "description": "Orang tua gue dulu gak setuju gue berhenti kerja. Kenapa sih orang takut gagal? Kalian tau gak, sembilan puluh persen startup gagal di…\n\nCuplikan dari: Dari Garasi ke 15 Cabang: Cerita Bisnis Kopi | Podcast\n\n#Garasi #menurut #jualan #shorts",
+   "retentionScore": {
+    "hook3s": 95,
+    "maintain10s": 97,
+    "payoffFull": 94,
+    "overall": 85
+   },
+   "finalScore": 9.9,
+   "narrativeStages": [
+    "cerita",
+    "opini",
+    "insight/tips",
+    "angka/fakta",
+    "tanya-jawab",
+    "reaksi"
+   ]
+  },
+  {
+   "startTime": 570.68,
+   "endTime": 630.2,
+   "reason": "pembuka kuat · penutup tuntas · satu topik utuh · berisi cerita, opini, insight/tips, angka/fakta, tanya-jawab, reaksi · topik: risiko, jujur, cara, caranya",
+   "title": "Pas gue pertama kali buka toko, yang dateng cuma dua orang. Jujur…",
+   "hook": "Pas gue pertama kali buka toko",
+   "description": "Bedanya ada di waktu dan risiko yang lo ambil. Kalian tau gak, sembilan puluh persen startup gagal di tahun pertama. Gimana caranya lo… Orang tua gue dulu gak setuju gue berhenti kerja. Sebenarnya yang paling penting itu kesehatan mental. Kenapa sih orang takut gagal…\n\nCuplikan dari: Dari Garasi ke 15 Cabang: Cerita Bisnis Kopi | Podcast\n\n#Garasi #risiko #jujur #shorts",
+   "retentionScore": {
+    "hook3s": 90,
+    "maintain10s": 92,
+    "payoffFull": 97,
+    "overall": 84
+   },
+   "finalScore": 9.8,
+   "narrativeStages": [
+    "cerita",
+    "opini",
+    "insight/tips",
+    "angka/fakta",
+    "tanya-jawab",
+    "reaksi"
+   ]
+  }
+ ]
+}

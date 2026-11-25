@@ -232,9 +232,9 @@ export function splitUnitsAtPauses(
 const bare = (t: string | undefined) => (t ?? '').toLowerCase().replace(/[^\p{L}\p{N}-]/gu, '');
 
 /** Does a topic transition ("oke kalau", "nah sekarang") start at word k? */
-function startsTransition(words: { text: string }[], k: number): boolean {
+function startsTransition(words: { text: string }[], k: number, transitions: readonly string[]): boolean {
   const pair = `${bare(words[k]?.text)} ${bare(words[k + 1]?.text)}`;
-  return TOPIC_TRANSITIONS.includes(pair);
+  return transitions.includes(pair);
 }
 
 /** A gap between two words at least this long ends a sentence unit. */
@@ -248,7 +248,10 @@ const WORD_PAUSE_BREAK = 0.5;
  * simply one sentence: it ends after . ! ? or at a pause between words, and
  * long run-ons are cut at a comma (or anywhere) after MAX_UNIT_SECONDS.
  */
-export function buildUnitsFromWords(input: { start: number; end: number; text: string }[]): Unit[] {
+export function buildUnitsFromWords(
+  input: { start: number; end: number; text: string }[],
+  transitions: readonly string[] = TOPIC_TRANSITIONS,
+): Unit[] {
   const words = [...input]
     .map((w) => ({ ...w, text: w.text.trim() }))
     .filter((w) => w.text)
@@ -275,7 +278,7 @@ export function buildUnitsFromWords(input: { start: number; end: number; text: s
     const long = w.end - cur[0].start >= MAX_UNIT_SECONDS && (/[,;:]$/.test(w.text) || w.end - cur[0].start >= MAX_UNIT_SECONDS * 1.5);
     // "…trivia-trivia | ok kalau horor horor kalian juga explore enggak":
     // without punctuation a new topic's opener is glued onto the last answer.
-    const transition = cur.length >= 2 && startsTransition(words, i + 1);
+    const transition = cur.length >= 2 && startsTransition(words, i + 1, transitions);
     if (sentenceEnd || pause || long || transition) flush();
   }
   flush();

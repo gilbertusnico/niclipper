@@ -9,15 +9,11 @@
 import type { Unit } from './units.js';
 import type { AudioFeatures, PauseSegment } from './types.js';
 import {
-  STOP_WORDS, STORY_MARKERS, STORY_OPENERS, OPINION_MARKERS, INSIGHT_MARKERS, REACTION_MARKERS,
-  LAUGHTER_TAGS, NON_SPEECH_TAGS, QUESTION_MARKERS, CONCLUSION_MARKERS, INTRO_MARKERS,
-  OUTRO_MARKERS, CTA_MARKERS, SPONSOR_MARKERS, FILLER_WORDS, FILLER_PHRASES,
-  CONTEXT_DEPENDENT_STARTS, SENTENCE_STARTERS, BAD_START_WORDS, BAD_END_WORDS,
-  NUMBER_WORDS, QUANTITY_UNITS, GENERIC_WORDS, REPLY_STARTS, CONTINUATION_STARTS, SHORT_FILLERS,
-  ANSWER_PARTICLES, HEDGE_WORDS, PRONOUN_STARTS,
-  TOPIC_TRANSITIONS,
+  LAUGHTER_TAGS, NON_SPEECH_TAGS, FILLER_WORDS, FILLER_PHRASES, BAD_START_WORDS, BAD_END_WORDS,
+  NUMBER_WORDS, QUANTITY_UNITS, CONTINUATION_STARTS, ANSWER_PARTICLES, HEDGE_WORDS, PRONOUN_STARTS,
 } from './lexicon.js';
 import { QUESTION_LOOKBACK_SECONDS } from './constants.js';
+import { PODCAST_PROFILE, type ContentProfile } from './profiles.js';
 
 export interface UnitFeatures {
   /** 0..1 how much this unit is about the video's main theme (title + recurring topic words). */
@@ -43,6 +39,10 @@ export interface UnitFeatures {
   outro: boolean;
   cta: boolean;
   sponsor: boolean;
+  /** Prayer / offering / announcements / worship leading (sermon profile only). */
+  liturgy: boolean;
+  /** Housekeeping inside the talk ("buka Alkitab", "katakan ke sebelah") (sermon profile only). */
+  setup: boolean;
   contextStart: boolean;
   /** Combined 0..1 interest score. */
   interest: number;
@@ -66,6 +66,7 @@ export interface Analysis {
   df: Map<string, number>;
   silences: PauseSegment[];
   totalDuration: number;
+  profile: ContentProfile;
 }
 
 /** First words of a short answer ("Bukan.", "Belum.", "Iya, bener."). */
@@ -97,8 +98,8 @@ function percentileRanks(values: number[]): number[] {
   return ranks;
 }
 
-function contentWords(words: string[]): string[] {
-  return words.filter((w) => w.length > 2 && !STOP_WORDS.has(w) && !FILLER_WORDS.has(w) && !/^\d+$/.test(w));
+function contentWords(words: string[], stopWords: ReadonlySet<string>): string[] {
+  return words.filter((w) => w.length > 2 && !stopWords.has(w) && !FILLER_WORDS.has(w) && !/^\d+$/.test(w));
 }
 
 function specificityOf(words: string[]): number {
@@ -166,14 +167,31 @@ function stemMatch(a: string, b: string): boolean {
   return edits + (a.length - i) + (b.length - j) <= 1;
 }
 
-export function analyzeUnits(units: Unit[], audio: AudioFeatures | null, sourceTitle?: string): Analysis {
+export function analyzeUnits(
+  units: Unit[],
+  audio: AudioFeatures | null,
+  sourceTitle?: string,
+  profile: ContentProfile = PODCAST_PROFILE,
+): Analysis {
+  const {
+    STOP_WORDS, STORY_MARKERS, STORY_OPENERS, OPINION_MARKERS, INSIGHT_MARKERS, REACTION_MARKERS,
+    QUESTION_MARKERS, CONCLUSION_MARKERS, INTRO_MARKERS, OUTRO_MARKERS, CTA_MARKERS, SPONSOR_MARKERS,
+    GENERIC_WORDS, CONTEXT_DEPENDENT_STARTS, TOPIC_TRANSITIONS, SENTENCE_STARTERS, REPLY_STARTS,
+    SHORT_FILLERS, EXTRA_OPENERS,
+  } = profile.lex;
+  const contentOf = (words: string[]) => contentWords(words, STOP_WORDS);
+  // "Amin?" / "Setuju?" / "Haleluya!" — the congregation's cue, not a question
+  // or an answer (empty set for podcasts → never true).
+  const isCallResponse = (u: Unit) =>
+    profile.callResponse.size > 0 && u.words.length > 0 && u.words.length <= 3 &&
+    u.words.every((w) => profile.callResponse.has(w));
   const n = units.length;
   const totalDuration = n ? units[n - 1].end : 0;
   const silences = audio ? [...audio.silenceSegments].sort((a, b) => a.startTime - b.startTime) : [];
 
   // ── IDF over units ───────────────────────────────────────────────
   const df = new Map<string, number>();
-  const unitContent = units.map((u) => contentWords(u.words));
+  const unitContent = units.map((u) => contentOf(u.words));
   for (const cw of unitContent) for (const w of new Set(cw)) df.set(w, (df.get(w) ?? 0) + 1);
   const idf = new Map<string, number>();
   for (const [w, d] of df) idf.set(w, Math.log((n + 1) / (d + 0.5)));
@@ -195,7 +213,7 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null, sourceT
   // (b) topic words that recur across the video (the main conversation),
   //     excluding words so common they carry no topic.
   const titleStems = [...new Set(
-    contentWords((sourceTitle ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)).map(stem),
+    contentOf((sourceTitle ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)).map(stem),
   )];
   const stemDf = new Map<string, number>();
   for (const cw of unitContent) for (const s of new Set(cw.map(stem))) stemDf.set(s, (stemDf.get(s) ?? 0) + 1);
@@ -247,7 +265,9 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null, sourceT
     // marker density instead of raw counts for long units.
     const lenScale = u.words.length > LONG_UNIT_WORDS ? LONG_UNIT_WORDS / u.words.length : 1;
     const markers = (phrases: readonly string[]) => countPhrases(norm, phrases) * lenScale;
-    const question = Math.min(1, markers(QUESTION_MARKERS) * 0.5 + (u.text.includes('?') ? 0.6 : 0));
+    const callResponse = isCallResponse(u);
+    const question = callResponse ? 0 : Math.min(1, markers(QUESTION_MARKERS) * 0.5 + (u.text.includes('?') ? 0.6 : 0));
+    const scripture = profile.scriptureRe?.test(norm) ? 0.5 : 0;
     // Recognition loops ("luang-luang-luang…", the same phrase 20×) carry no content.
     const tokens = u.text.toLowerCase().split(/[\s-]+/).filter(Boolean);
     const repetitive = tokens.length >= 8 && new Set(tokens).size / tokens.length < 0.35;
@@ -262,10 +282,10 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null, sourceT
       theme: theme[i],
       story: Math.min(1, markers(STORY_MARKERS) * 0.6),
       opener: opensWith(STORY_OPENERS) || opensWith(OPINION_MARKERS) || opensWith(QUESTION_MARKERS) ||
-        opensWith(['nah kalau', 'nah kalo', 'kalau kalian', 'kalo kalian', 'ada tiga', 'ada dua', 'ada lima', 'caranya'])
+        opensWith(EXTRA_OPENERS)
         ? 1 : 0,
       opinion: Math.min(1, markers(OPINION_MARKERS) * 0.7),
-      insight: Math.min(1, markers(INSIGHT_MARKERS) * 0.5),
+      insight: Math.min(1, markers(INSIGHT_MARKERS) * 0.5 + scripture),
       reaction: Math.min(1, markers(REACTION_MARKERS) * 0.5 + laughter + (u.text.includes('!') ? 0.3 : 0)),
       question,
       conclusion: Math.min(1, countPhrases(norm, CONCLUSION_MARKERS) * 0.7 + (u.words[0] === 'jadi' ? 0.4 : 0)),
@@ -279,9 +299,13 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null, sourceT
       outro: u.end > outroZone && countPhrases(norm, OUTRO_MARKERS) > 0,
       cta: countPhrases(norm, CTA_MARKERS) > 0,
       sponsor: countPhrases(norm, SPONSOR_MARKERS) > 0,
+      liturgy: profile.liturgyMarkers.length > 0 && countPhrases(norm, profile.liturgyMarkers) > 0,
+      setup: profile.setupMarkers.length > 0 && countPhrases(norm, profile.setupMarkers) > 0,
       contextStart: startsWithAny(norm, CONTEXT_DEPENDENT_STARTS),
       interest: 0,
-      keywords: [...new Set(unitContent[i])].sort((a, b) => (idf.get(b) ?? 0) - (idf.get(a) ?? 0)).slice(0, 4),
+      keywords: [...new Set(unitContent[i])]
+        .filter((w) => profile.keywordStop.size === 0 || !profile.keywordStop.has(stem(w)))
+        .sort((a, b) => (idf.get(b) ?? 0) - (idf.get(a) ?? 0)).slice(0, 4),
     };
 
     const hasAudio = f.energy !== null;
@@ -409,6 +433,7 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null, sourceT
     // Hard rule: never start on the answer to a question asked just before —
     // the clip should start AT the question ("Apa sifat Aries…?" | "Ekstrovert sih.").
     for (let k = i - 1; k >= Math.max(0, i - 3) && u.start - units[k].end < QUESTION_LOOKBACK_SECONDS; k--) {
+      if (isCallResponse(units[k])) continue;
       if (units[k].text.trim().endsWith('?') || (k === i - 1 && startsWithAny(units[k].norm, QUESTION_MARKERS))) {
         q = Math.min(q, 0.3);
         break;
@@ -446,7 +471,8 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null, sourceT
       (features[k].reaction >= 0.5 || units[k].tags.some((t) => LAUGHTER_TAGS.some((l) => t.includes(l))));
     if (isReaction(i) && breakAfter[i] >= 0.4) q = Math.max(q, 0.8);
     // Never end on a question: the answer is the payoff.
-    if (u.text.trim().endsWith('?')) q = Math.min(q, 0.3);
+    // ("Amin?" closing a sermon point is a fine end.)
+    if (u.text.trim().endsWith('?') && !isCallResponse(u)) q = Math.min(q, 0.3);
     // …nor on a line that opens the next topic ("Oke, kalau horor-horor
     // kalian juga explore enggak?" — auto-captions often drop the "?").
     if (TOPIC_TRANSITIONS.some((t) => u.norm.includes(` ${t} `))) q = Math.min(q, 0.3);
@@ -460,5 +486,5 @@ export function analyzeUnits(units: Unit[], audio: AudioFeatures | null, sourceT
     return Math.max(0, Math.min(1, q));
   });
 
-  return { units, features, breakAfter, topicAfter, startQuality, endQuality, idf, df, silences, totalDuration };
+  return { units, features, breakAfter, topicAfter, startQuality, endQuality, idf, df, silences, totalDuration, profile };
 }

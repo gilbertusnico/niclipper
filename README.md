@@ -190,10 +190,13 @@ Perintah ini menjalankan dua bagian sekaligus: tampilan web (port **5173**) dan 
 ### AI Generate
 1. Pilih tab **AI Generate**.
 2. Atur subtitle (**Auto-generate** atau **No Subtitles**) dan **Hook text at the start** (on/off).
-3. Tempel link YouTube, lalu klik **Generate Clips**.
-4. Tunggu prosesnya: download → transkrip → analisis → potong → render.
-5. Di setiap klip: tonton, **Download**, dan copy **Title / Hook text / Description**.
-6. Isi **Channel hashtags** sekali saja. Isinya otomatis masuk ke semua deskripsi dan diingat untuk sesi berikutnya.
+3. Pilih **Content type**:
+   - **Podcast**: obrolan 2 orang atau lebih (default).
+   - **Khotbah**: khotbah Kristen. Bagian doa, persembahan, pengumuman, dan pimpin pujian dilewati. Ilustrasi/kesaksian dan referensi ayat dinilai lebih tinggi, dan seruan "Amin?" / "Setuju?" tidak dianggap pertanyaan.
+4. Tempel link YouTube, lalu klik **Generate Clips**.
+5. Tunggu prosesnya: download → transkrip → analisis → potong → render.
+6. Di setiap klip: tonton, **Download**, dan copy **Title / Hook text / Description**.
+7. Isi **Channel hashtags** sekali saja. Isinya otomatis masuk ke semua deskripsi dan diingat untuk sesi berikutnya.
 
 ### Manual Crop / Import File
 1. Pilih tab **Manual Crop** (link YouTube) atau **Import File** (upload video).
@@ -250,6 +253,22 @@ cp .env.example .env
 | Variabel | Default | Keterangan |
 |---|---|---|
 | `PORT` | `3001` | Port server. Kalau diganti, sesuaikan juga `target` proxy di `vite.config.ts`. |
+
+### Tes engine (untuk developer)
+
+Sebelum dan sesudah mengubah engine analisis (`server/analysis/`):
+
+```bash
+npx tsx scripts/regression/run.ts
+```
+
+Perintah ini menjalankan engine pada transkrip podcast sintetis dan membandingkannya dengan snapshot. Hasilnya harus `SAME` kalau perubahannya tidak dimaksudkan mengubah hasil podcast. Kalau perubahannya memang disengaja, perbarui snapshot dengan `--write`.
+
+```bash
+npx tsx scripts/regression/sermon-smoke.ts
+```
+
+Perintah ini mengecek profil Khotbah: tidak ada klip yang mengenai blok doa, persembahan, atau pengumuman.
 
 ---
 

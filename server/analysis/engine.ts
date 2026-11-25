@@ -24,12 +24,14 @@ import { analyzeUnits } from './features.js';
 import { selectMoments } from './selector.js';
 import type { SourceInfo } from './describe.js';
 import { DEFAULT_MAX_CLIPS } from './constants.js';
+import { getProfile, type ContentProfileId } from './profiles.js';
 
 /**
  * @param transcript - Timestamped transcript (`[TIMESTAMP: a -> b]\ntext` blocks)
  * @param _videoPath - Unused (kept for call-site compatibility)
  * @param audioPath - 16-bit PCM WAV of the SAME video (optional but recommended)
  * @param onProgress - Progress callback (0-100)
+ * @param profileId - Kind of video: 'podcast' (default) or 'sermon'
  */
 export async function analyzeTranscript(
   transcript: string,
@@ -39,14 +41,17 @@ export async function analyzeTranscript(
   maxResults: number = DEFAULT_MAX_CLIPS,
   source: SourceInfo = {},
   words?: WordTiming[],
+  profileId: ContentProfileId = 'podcast',
 ): Promise<ViralMoment[]> {
   const progress = (p: number) => onProgress?.(p);
+  const profile = getProfile(profileId);
+  console.log(`[Engine] Content profile: ${profile.id}`);
 
   // Real word timings (YouTube auto-captions) → one unit per sentence.
   // Otherwise caption cues / Whisper chunks, re-cut at audio pauses below.
   const fromWords = !!words && words.length > 0;
   console.log(`[Engine] Building speech units (${fromWords ? 'sentences from word timing' : 'caption cues'})...`);
-  let units = fromWords ? buildUnitsFromWords(words) : buildUnits(transcript);
+  let units = fromWords ? buildUnitsFromWords(words, profile.lex.TOPIC_TRANSITIONS) : buildUnits(transcript);
   console.log(`[Engine] ${units.length} units, ${units.length ? units[units.length - 1].end.toFixed(0) : 0}s of speech`);
   progress(15);
   if (units.length === 0) return [];
@@ -69,7 +74,7 @@ export async function analyzeTranscript(
     console.log(`[Engine] Split at pauses: ${before} → ${units.length} units`);
   }
 
-  const analysis = analyzeUnits(units, audio, source.title);
+  const analysis = analyzeUnits(units, audio, source.title, profile);
   progress(70);
 
   const moments = selectMoments(analysis, maxResults, source);

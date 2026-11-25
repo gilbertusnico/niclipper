@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { downloadVideo, getVideoInfo } from './downloader.js';
 import { getTranscriptForYouTube } from './subtitle-downloader.js';
 import { analyzeTranscript } from './analyzer.js';
+import type { ContentProfileId } from './analysis/profiles.js';
 import { cropClips } from './cropper.js';
 import { renderFinalClips } from './renderer.js';
 import { runFfmpeg } from './ffmpeg.js';
@@ -25,12 +26,14 @@ export type { ClipResult, ViralMoment, ProgressCallback };
  *
  * @param subtitles - 'auto' (default, whisper transcribes), 'none' (skip), 'manual' (use provided)
  * @param hookText - burn each clip's hook line in big at the start (default on)
+ * @param profile - analysis profile: 'podcast' (default) or 'sermon'
  */
 export async function runPipeline(
   url: string,
   emitProgress: ProgressCallback,
   subtitles: 'auto' | 'none' | 'manual' = 'auto',
   hookText: boolean = true,
+  profile: ContentProfileId = 'podcast',
 ): Promise<ClipResult[]> {
   // ── Stage 1: Download ──────────────────────────────────────────────
   emitProgress('downloading', 0);
@@ -107,7 +110,7 @@ export async function runPipeline(
 
     moments = await analyzeTranscript(transcript, videoPath, analysisAudio, (progress) => {
       emitProgress('analyzing', Math.max(5, progress));
-    }, undefined, { title: sourceTitle, url }, words);
+    }, undefined, { title: sourceTitle, url }, words, profile);
     console.log(`[Pipeline] Found ${moments.length} viral moments`);
     emitProgress('analyzing', 100);
   } catch (err: unknown) {

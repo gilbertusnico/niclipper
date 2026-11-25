@@ -5,6 +5,8 @@ import TimeRangeInput from './components/TimeRangeInput';
 import FileUpload from './components/FileUpload';
 import SubtitleSelector from './components/SubtitleSelector';
 import type { SubtitleMode } from './components/SubtitleSelector';
+import ContentTypeSelector from './components/ContentTypeSelector';
+import type { ContentType } from './components/ContentTypeSelector';
 import ProgressBar from './components/ProgressBar';
 import ClipCard from './components/ClipCard';
 
@@ -51,6 +53,7 @@ type CropMode = 'ai' | 'manual' | 'file';
 
 const HOOK_TEXT_KEY = 'niclipper.hookText';
 const CHANNEL_HASHTAGS_KEY = 'niclipper.channelHashtags';
+const CONTENT_TYPE_KEY = 'niclipper.contentType';
 
 function readSetting(key: string): string | null {
   try { return localStorage.getItem(key); } catch { return null; }
@@ -89,6 +92,13 @@ export default function App() {
   const [subtitleMode, setSubtitleMode] = useState<SubtitleMode>('auto');
   const [hookText, setHookText] = useState<boolean>(() => readSetting(HOOK_TEXT_KEY) !== '0');
   const [channelHashtags, setChannelHashtags] = useState<string>(() => readSetting(CHANNEL_HASHTAGS_KEY) ?? '');
+  const [contentType, setContentType] = useState<ContentType>(() =>
+    readSetting(CONTENT_TYPE_KEY) === 'sermon' ? 'sermon' : 'podcast');
+
+  const updateContentType = useCallback((type: ContentType) => {
+    setContentType(type);
+    writeSetting(CONTENT_TYPE_KEY, type);
+  }, []);
 
   const toggleHookText = useCallback(() => {
     setHookText((on) => {
@@ -121,6 +131,9 @@ export default function App() {
     }
     if (!hookText) {
       endpoint += '&hook=0';
+    }
+    if (contentType === 'sermon') {
+      endpoint += '&profile=sermon';
     }
     const eventSource = new EventSource(endpoint);
 
@@ -175,7 +188,7 @@ export default function App() {
       setIsProcessing(false);
       eventSource.close();
     };
-  }, [resetState, subtitleMode, hookText]);
+  }, [resetState, subtitleMode, hookText, contentType]);
 
   const handleManualCrop = useCallback((url: string, ranges: CropRange[], transcript?: string) => {
     resetState();
@@ -471,6 +484,13 @@ export default function App() {
               disabledOptions={mode === 'ai' ? ['manual'] : []}
             />
           </div>
+
+          {/* Content type (AI mode): which analysis profile picks the moments */}
+          {mode === 'ai' && (
+            <div className="mt-6">
+              <ContentTypeSelector value={contentType} onChange={updateContentType} disabled={isProcessing} />
+            </div>
+          )}
 
           {/* Hook text toggle (AI mode) */}
           {mode === 'ai' && (
